@@ -18,6 +18,9 @@ SECRET_KEY        = os.environ.get("SECRET_KEY", secrets.token_hex(32))
 stripe.api_key = STRIPE_SECRET
 db = create_client(SUPABASE_URL, SUPABASE_KEY) if SUPABASE_URL and SUPABASE_KEY else None
 
+ADMIN_EMAIL    = os.environ.get("ADMIN_EMAIL", "")
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "")
+
 SESSIONS: dict[str, str] = {}
 
 def hash_pw(pw: str) -> str:
@@ -341,6 +344,14 @@ async def login_get():
 
 @app.post("/login", response_class=HTMLResponse)
 async def login_post(email: str = Form(...), password: str = Form(...)):
+    # ── Admin bypass ──────────────────────────────────────────────────────
+    if ADMIN_EMAIL and email == ADMIN_EMAIL and password == ADMIN_PASSWORD:
+        sid = secrets.token_hex(32)
+        SESSIONS[sid] = email
+        resp = RedirectResponse(url="/dashboard", status_code=302)
+        resp.set_cookie("sid", sid, httponly=True, samesite="lax", max_age=60 * 60 * 24 * 30)
+        return resp
+
     result = db.table("subscribers").select("*").eq("email", email).execute()
     if not result.data:
         return LOGIN_HTML.replace("{error}", '<div class="error-box">❌ Email not found. <a href="/subscribe" style="color:#f59e0b">Subscribe here.</a></div>')
