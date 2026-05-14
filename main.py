@@ -289,7 +289,7 @@ async def subscribe():
         )
         return RedirectResponse(url=session.url)
     except Exception as e:
-        return HTMLResponse(f"<p style='color:red;font-family:sans-serif;padding:40px'>Stripe error: {e}<br><a href='/'>Go back</a></p>")
+        return HTMLResponse(f"<pre style='color:red;font-family:monospace;padding:40px;background:#111'>STRIPE ERROR:\n{str(e)}\n\nPrice ID: {STRIPE_PRICE_ID}\nSite URL: {SITE_URL}</pre><a href='/' style='color:#f59e0b;padding:40px;display:block'>Go back</a>")
 
 # ── Register (after Stripe payment) ───────────────────────────────────────────
 @app.get("/register", response_class=HTMLResponse)
