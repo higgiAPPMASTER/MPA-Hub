@@ -427,13 +427,23 @@ async def admin_dashboard(request: Request):
     if not is_admin(request):
         return RedirectResponse(url="/login")
 
-    # Get all subscribers
-    subs = db.table("subscribers").select("*").order("created_at", desc=True).execute().data or []
-
-    # Get login logs for last 30 days
     from datetime import datetime, timedelta, timezone
-    since = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
-    all_logs = db.table("login_log").select("email,ip,logged_at").gte("logged_at", since).execute().data or []
+    from collections import defaultdict
+
+    # Get all subscribers (wrapped in try/except)
+    try:
+        subs = db.table("subscribers").select("*").execute().data or []
+        subs.sort(key=lambda x: x.get("created_at",""), reverse=True)
+    except Exception as e:
+        return HTMLResponse(f"<h2>DB Error fetching subscribers: {e}</h2>")
+
+    # Get login logs (may not exist yet — handled gracefully)
+    all_logs = []
+    try:
+        since = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
+        all_logs = db.table("login_log").select("email,ip,logged_at").gte("logged_at", since).execute().data or []
+    except Exception:
+        pass  # login_log table may not exist yet — that's OK
 
     # Build per-user stats
     from collections import defaultdict
