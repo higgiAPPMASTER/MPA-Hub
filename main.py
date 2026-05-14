@@ -148,8 +148,15 @@ HOME_HTML = BASE_STYLE + """
 
 <footer>
   <div style="font-family:'Playfair Display',serif;font-size:16px;color:#4b5563;margin-bottom:10px">Money Picks Arena</div>
-  <p>Money Picks Arena provides sports picks for entertainment purposes only. Not a sportsbook. Please gamble responsibly. Must be 21+.</p>
-  <p style="margin-top:6px">© 2026 Money Picks Arena. All Rights Reserved.</p>
+  <p style="color:#4b5563;font-size:12px;max-width:600px;margin:0 auto 8px;line-height:1.8">
+    For entertainment and informational purposes only. We do not accept bets or guarantee results. 
+    Please gamble responsibly. Must be 18+ (21+ in some states).
+  </p>
+  <p style="margin-top:4px;color:#374151">
+    <a href="https://www.ncpgambling.org" target="_blank" style="color:#4b5563;text-decoration:underline">Problem Gambling Help</a>
+    &nbsp;·&nbsp; 1-800-522-4700
+  </p>
+  <p style="margin-top:8px">© 2026 Money Picks Arena. All Rights Reserved.</p>
 </footer>
 """
 
@@ -224,7 +231,11 @@ DASHBOARD_HTML = BASE_STYLE + """
 </nav>
 <div style="max-width:1000px;margin:0 auto;padding:100px 24px 60px">
   <h1 class="font-display" style="font-size:36px;margin-bottom:6px">Welcome back! 🏆</h1>
-  <p style="color:#6b7280;margin-bottom:44px">Choose your sport below and get today's picks.</p>
+  <p style="color:#6b7280;margin-bottom:16px">Choose your sport below and get today's picks.</p>
+  <div style="background:rgba(245,158,11,.06);border:1px solid rgba(245,158,11,.2);border-radius:10px;padding:12px 18px;margin-bottom:32px;display:flex;align-items:center;gap:12px;font-size:12px">
+    <span style="font-size:20px">🔐</span>
+    <span style="color:#6b7280">These picks are exclusively for <strong style="color:#f59e0b">{email}</strong> — sharing your account or picks violates our terms and will result in immediate cancellation.</span>
+  </div>
   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:20px">
     <div class="card" style="text-align:center;display:flex;flex-direction:column;gap:14px;align-items:center">
       <div style="font-size:52px">⚾</div>
@@ -343,7 +354,7 @@ async def login_get():
     return LOGIN_HTML.replace("{error}", "")
 
 @app.post("/login", response_class=HTMLResponse)
-async def login_post(email: str = Form(...), password: str = Form(...)):
+async def login_post(request: Request, email: str = Form(...), password: str = Form(...)):
     # ── Admin bypass ──────────────────────────────────────────────────────
     if ADMIN_EMAIL and email == ADMIN_EMAIL and password == ADMIN_PASSWORD:
         sid = secrets.token_hex(32)
@@ -362,6 +373,21 @@ async def login_post(email: str = Form(...), password: str = Form(...)):
 
     if not user.get("is_active"):
         return LOGIN_HTML.replace("{error}", '<div class="error-box">❌ Your subscription is inactive. <a href="/subscribe" style="color:#f59e0b">Renew here.</a></div>')
+
+    # Log this login attempt for IP tracking
+    try:
+        ip = request.headers.get("X-Forwarded-For", request.client.host or "unknown").split(",")[0].strip()
+        ua = request.headers.get("User-Agent", "")[:200]
+        db.table("login_log").insert({"email": email, "ip": ip, "user_agent": ua}).execute()
+        # Check for suspicious activity (5+ unique IPs in last 24h)
+        from datetime import datetime, timedelta, timezone
+        since = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
+        logs = db.table("login_log").select("ip").eq("email", email).gte("logged_at", since).execute()
+        unique_ips = len(set(l["ip"] for l in logs.data))
+        if unique_ips >= 5:
+            db.table("subscribers").update({"notes": f"⚠️ SUSPICIOUS: {unique_ips} IPs in 24h"}).eq("email", email).execute()
+    except Exception:
+        pass
 
     sid = secrets.token_hex(32)
     SESSIONS[sid] = email
@@ -386,6 +412,124 @@ async def logout(request: Request):
     resp = RedirectResponse(url="/")
     resp.delete_cookie("sid")
     return resp
+
+
+# ── Admin Dashboard ────────────────────────────────────────────────────────────
+def is_admin(request: Request) -> bool:
+    sid = request.cookies.get("sid")
+    email = SESSIONS.get(sid, "") if sid else ""
+    return email == ADMIN_EMAIL and bool(ADMIN_EMAIL)
+
+@app.get("/admin", response_class=HTMLResponse)
+async def admin_dashboard(request: Request):
+    if not is_admin(request):
+        return RedirectResponse(url="/login")
+
+    # Get all subscribers
+    subs = db.table("subscribers").select("*").order("created_at", desc=True).execute().data or []
+
+    # Get login logs for last 30 days
+    from datetime import datetime, timedelta, timezone
+    since = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
+    all_logs = db.table("login_log").select("email,ip,logged_at").gte("logged_at", since).execute().data or []
+
+    # Build per-user stats
+    from collections import defaultdict
+    ip_map = defaultdict(set)
+    last_login_map = {}
+    for log in all_logs:
+        ip_map[log["email"]].add(log["ip"])
+        ts = log.get("logged_at","")
+        if ts > last_login_map.get(log["email"],""):
+            last_login_map[log["email"]] = ts
+
+    rows = ""
+    for s in subs:
+        em = s["email"]
+        active = s.get("is_active", False)
+        ips = ip_map.get(em, set())
+        ip_count = len(ips)
+        last_ip = list(ips)[-1] if ips else "—"
+        last_seen = last_login_map.get(em, "—")[:16].replace("T"," ") if last_login_map.get(em) else "—"
+        notes = s.get("notes","") or ""
+        suspicious = "⚠️" in notes
+        status_badge = '<span style="color:#4ade80;font-weight:700">✅ Active</span>' if active else '<span style="color:#f87171;font-weight:700">❌ Inactive</span>'
+        sus_badge = '<span style="background:#7f1d1d;color:#fca5a5;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700">⚠️ SUSPICIOUS</span>' if suspicious else ""
+        ip_color = "#fca5a5" if ip_count >= 5 else "#f59e0b" if ip_count >= 3 else "#4ade80"
+        cancel_btn = f'<form method="post" action="/admin/cancel" style="display:inline"><input type="hidden" name="email" value="{em}"><button style="background:#7f1d1d;color:#fca5a5;border:1px solid #991b1b;border-radius:6px;padding:4px 12px;font-size:11px;cursor:pointer;font-weight:700">❌ Cancel</button></form>' if active else f'<form method="post" action="/admin/reinstate" style="display:inline"><input type="hidden" name="email" value="{em}"><button style="background:#14532d;color:#86efac;border:1px solid #166534;border-radius:6px;padding:4px 12px;font-size:11px;cursor:pointer;font-weight:700">✅ Reinstate</button></form>'
+        rows += f"""<tr style="border-bottom:1px solid #1f2937">
+          <td style="padding:12px 14px;color:#e5e7eb;font-size:13px">{em}</td>
+          <td style="padding:12px 14px">{status_badge}</td>
+          <td style="padding:12px 14px;color:{ip_color};font-weight:700;font-size:13px">{ip_count} IPs {sus_badge}</td>
+          <td style="padding:12px 14px;color:#9ca3af;font-size:12px;font-family:monospace">{last_ip}</td>
+          <td style="padding:12px 14px;color:#9ca3af;font-size:12px">{last_seen}</td>
+          <td style="padding:12px 14px;color:#9ca3af;font-size:11px;max-width:180px">{notes}</td>
+          <td style="padding:12px 14px">{cancel_btn}</td>
+        </tr>"""
+
+    total = len(subs)
+    active_count = sum(1 for s in subs if s.get("is_active"))
+    suspicious_count = sum(1 for s in subs if "⚠️" in (s.get("notes","") or ""))
+
+    html = f"""<!DOCTYPE html><html><head><meta charset="UTF-8">
+<title>MPA Admin</title>
+<style>
+  body{{background:#0a0a0a;color:#e5e7eb;font-family:'Segoe UI',sans-serif;padding:32px}}
+  h1{{color:#f59e0b;font-size:28px;margin-bottom:4px}}
+  .stats{{display:flex;gap:20px;margin:20px 0}}
+  .stat{{background:#111;border:1px solid #1f2937;border-radius:10px;padding:16px 24px;text-align:center}}
+  .stat .n{{font-size:28px;font-weight:900;color:#f59e0b}}
+  .stat .l{{font-size:11px;color:#6b7280;text-transform:uppercase;letter-spacing:1px;margin-top:4px}}
+  table{{width:100%;border-collapse:collapse;background:#111;border-radius:10px;overflow:hidden;border:1px solid #1f2937}}
+  th{{background:#0a0a0a;padding:10px 14px;text-align:left;color:#f59e0b;font-size:11px;text-transform:uppercase;letter-spacing:1px;white-space:nowrap}}
+  tr:hover td{{background:#1a1a1a}}
+  .back{{color:#f59e0b;text-decoration:none;font-size:13px;display:inline-block;margin-bottom:20px}}
+</style></head><body>
+  <a href="/dashboard" class="back">← Back to Dashboard</a>
+  <h1>🔐 Money Picks Arena — Admin</h1>
+  <p style="color:#6b7280;margin-bottom:20px">Manage subscribers, detect sharing, cancel accounts.</p>
+  <div class="stats">
+    <div class="stat"><div class="n">{total}</div><div class="l">Total Members</div></div>
+    <div class="stat"><div class="n" style="color:#4ade80">{active_count}</div><div class="l">Active</div></div>
+    <div class="stat"><div class="n" style="color:#fca5a5">{total-active_count}</div><div class="l">Inactive</div></div>
+    <div class="stat"><div class="n" style="color:#fca5a5">{suspicious_count}</div><div class="l">Suspicious ⚠️</div></div>
+  </div>
+  <table>
+    <thead><tr>
+      <th>Email</th><th>Status</th><th>Unique IPs (30d)</th>
+      <th>Last IP</th><th>Last Seen</th><th>Notes</th><th>Action</th>
+    </tr></thead>
+    <tbody>{rows}</tbody>
+  </table>
+  <p style="color:#374151;font-size:11px;margin-top:16px">⚠️ = 5+ unique IPs in 24h &nbsp;|&nbsp; 🟡 = 3-4 IPs &nbsp;|&nbsp; 🟢 = 1-2 IPs</p>
+</body></html>"""
+    return HTMLResponse(html)
+
+
+@app.post("/admin/cancel")
+async def admin_cancel(request: Request, email: str = Form(...)):
+    if not is_admin(request):
+        return RedirectResponse(url="/login")
+    db.table("subscribers").update({
+        "is_active": False,
+        "notes": (db.table("subscribers").select("notes").eq("email",email).execute().data or [{}])[0].get("notes","") + " | CANCELLED BY ADMIN"
+    }).eq("email", email).execute()
+    # Cancel Stripe subscription if exists
+    try:
+        sub = db.table("subscribers").select("stripe_subscription_id").eq("email",email).execute().data
+        if sub and sub[0].get("stripe_subscription_id"):
+            stripe.subscription.cancel(sub[0]["stripe_subscription_id"])
+    except Exception:
+        pass
+    return RedirectResponse(url="/admin", status_code=302)
+
+
+@app.post("/admin/reinstate")
+async def admin_reinstate(request: Request, email: str = Form(...)):
+    if not is_admin(request):
+        return RedirectResponse(url="/login")
+    db.table("subscribers").update({"is_active": True}).eq("email", email).execute()
+    return RedirectResponse(url="/admin", status_code=302)
 
 # ── Stripe Webhook ─────────────────────────────────────────────────────────────
 @app.post("/webhook")
