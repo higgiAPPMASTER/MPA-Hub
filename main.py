@@ -514,6 +514,32 @@ async def admin_dashboard(request: Request):
     <tbody>{rows}</tbody>
   </table>
   <p style="color:#374151;font-size:11px;margin-top:16px">⚠️ = 5+ unique IPs in 24h &nbsp;|&nbsp; 🟡 = 3-4 IPs &nbsp;|&nbsp; 🟢 = 1-2 IPs</p>
+
+  <div style="background:#111;border:1px solid #1f2937;border-radius:10px;padding:24px;margin-top:28px;max-width:480px">
+    <h3 style="color:#f59e0b;font-size:16px;margin-bottom:4px">➕ Create User (No Stripe needed)</h3>
+    <p style="color:#6b7280;font-size:12px;margin-bottom:16px">Use for test accounts, comped users, or friends.</p>
+    <form method="post" action="/admin/create-user">
+      <div style="margin-bottom:12px">
+        <label style="display:block;color:#9ca3af;font-size:11px;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Email</label>
+        <input name="email" type="email" required placeholder="user@example.com"
+               style="width:100%;background:#0a0a0a;border:1px solid #374151;border-radius:8px;padding:10px 14px;color:#fff;font-size:13px;outline:none;box-sizing:border-box">
+      </div>
+      <div style="margin-bottom:12px">
+        <label style="display:block;color:#9ca3af;font-size:11px;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Password</label>
+        <input name="password" type="text" required placeholder="Choose a password for them"
+               style="width:100%;background:#0a0a0a;border:1px solid #374151;border-radius:8px;padding:10px 14px;color:#fff;font-size:13px;outline:none;box-sizing:border-box">
+      </div>
+      <div style="margin-bottom:16px">
+        <label style="display:block;color:#9ca3af;font-size:11px;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Notes (optional)</label>
+        <input name="notes" type="text" placeholder="e.g. Test user - John"
+               style="width:100%;background:#0a0a0a;border:1px solid #374151;border-radius:8px;padding:10px 14px;color:#fff;font-size:13px;outline:none;box-sizing:border-box">
+      </div>
+      <button type="submit"
+              style="background:linear-gradient(135deg,#f59e0b,#d97706);color:#000;border:none;border-radius:8px;padding:12px 28px;font-size:13px;font-weight:900;cursor:pointer;width:100%">
+        ➕ Create User
+      </button>
+    </form>
+  </div>
 </body></html>"""
     return HTMLResponse(html)
 
@@ -544,6 +570,44 @@ async def admin_reinstate(request: Request, email: str = Form(...)):
         return RedirectResponse(url="/login")
     db.table("subscribers").update({"is_active": True}).eq("email", email).execute()
     return RedirectResponse(url="/admin", status_code=302)
+
+
+@app.post("/admin/create-user")
+async def admin_create_user(
+    request: Request,
+    email: str = Form(...),
+    password: str = Form(...),
+    notes: str = Form("")
+):
+    if not is_admin(request):
+        return RedirectResponse(url="/login")
+    try:
+        # Check if user already exists
+        existing = db.table("subscribers").select("id").eq("email", email).execute().data
+        if existing:
+            return HTMLResponse(f"""<html><body style="background:#0a0a0a;color:#f87171;font-family:sans-serif;padding:40px">
+                <h2>❌ User already exists: {email}</h2>
+                <a href="/admin" style="color:#f59e0b">← Back to Admin</a>
+            </body></html>""")
+        # Create the user
+        db.table("subscribers").insert({
+            "email":         email,
+            "password_hash": hash_pw(password),
+            "is_active":     True,
+            "notes":         notes or "Created by admin (no Stripe)"
+        }).execute()
+        return HTMLResponse(f"""<html><body style="background:#0a0a0a;color:#4ade80;font-family:sans-serif;padding:40px">
+            <h2>✅ User created successfully!</h2>
+            <p style="color:#9ca3af;margin:12px 0">Email: <strong style="color:#fff">{email}</strong></p>
+            <p style="color:#9ca3af;margin:12px 0">Password: <strong style="color:#fff">{password}</strong></p>
+            <p style="color:#6b7280;font-size:13px;margin-top:20px">Share these credentials with your test user. They can log in at your hub URL.</p>
+            <a href="/admin" style="color:#f59e0b;display:inline-block;margin-top:20px">← Back to Admin</a>
+        </body></html>""")
+    except Exception as e:
+        return HTMLResponse(f"""<html><body style="background:#0a0a0a;color:#f87171;font-family:sans-serif;padding:40px">
+            <h2>❌ Error: {e}</h2>
+            <a href="/admin" style="color:#f59e0b">← Back to Admin</a>
+        </body></html>""")
 
 # ── Stripe Webhook ─────────────────────────────────────────────────────────────
 @app.post("/webhook")
