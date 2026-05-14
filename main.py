@@ -280,7 +280,11 @@ async def home():
 @app.get("/subscribe")
 async def subscribe():
     try:
-        session = stripe.checkout.sessions.create(
+        if not STRIPE_SECRET_KEY:
+            return HTMLResponse("<pre style='color:red;padding:40px'>ERROR: STRIPE_SECRET_KEY not set in Render env vars</pre>")
+        if not STRIPE_PRICE_ID:
+            return HTMLResponse("<pre style='color:red;padding:40px'>ERROR: STRIPE_PRICE_ID not set in Render env vars</pre>")
+        session = stripe.checkout.Session.create(
             payment_method_types=["card"],
             mode="subscription",
             line_items=[{"price": STRIPE_PRICE_ID, "quantity": 1}],
@@ -289,7 +293,8 @@ async def subscribe():
         )
         return RedirectResponse(url=session.url)
     except Exception as e:
-        return HTMLResponse(f"<pre style='color:red;font-family:monospace;padding:40px;background:#111'>STRIPE ERROR:\n{str(e)}\n\nPrice ID: {STRIPE_PRICE_ID}\nSite URL: {SITE_URL}</pre><a href='/' style='color:#f59e0b;padding:40px;display:block'>Go back</a>")
+        import traceback
+        return HTMLResponse(f"<pre style='color:red;font-family:monospace;padding:40px;background:#111'>STRIPE ERROR: {repr(e)}\n\n{traceback.format_exc()}\n\nKey starts with: {STRIPE_SECRET_KEY[:12]}...\nPrice ID: {STRIPE_PRICE_ID}\nSite URL: {SITE_URL}</pre><a href='/' style='color:#f59e0b;padding:40px;display:block'>Go back</a>")
 
 # ── Register (after Stripe payment) ───────────────────────────────────────────
 @app.get("/register", response_class=HTMLResponse)
