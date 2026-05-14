@@ -226,6 +226,7 @@ DASHBOARD_HTML = BASE_STYLE + """
   <div class="nav-links">
     <span style="color:#4b5563;font-size:12px">{email}</span>
     <span style="background:rgba(74,222,128,.08);border:1px solid rgba(74,222,128,.2);color:#4ade80;font-size:11px;font-weight:700;padding:4px 12px;border-radius:999px">✓ ACTIVE</span>
+    <a href="/admin" style="color:#f59e0b;font-size:12px;font-weight:700;text-decoration:none" class="nav-link">⚙️ Admin</a>
     <a href="/logout" class="nav-link">Logout</a>
   </div>
 </nav>
@@ -360,7 +361,7 @@ async def login_post(request: Request, email: str = Form(...), password: str = F
         sid = secrets.token_hex(32)
         SESSIONS[sid] = email
         resp = RedirectResponse(url="/dashboard", status_code=302)
-        resp.set_cookie("sid", sid, httponly=True, samesite="lax", max_age=60 * 60 * 24 * 30)
+        resp.set_cookie("sid", sid, httponly=True, samesite="lax", max_age=60 * 60 * 24 * 365)  # 1 year
         return resp
 
     result = db.table("subscribers").select("*").eq("email", email).execute()
@@ -374,20 +375,21 @@ async def login_post(request: Request, email: str = Form(...), password: str = F
     if not user.get("is_active"):
         return LOGIN_HTML.replace("{error}", '<div class="error-box">❌ Your subscription is inactive. <a href="/subscribe" style="color:#f59e0b">Renew here.</a></div>')
 
-    # Log this login attempt for IP tracking
-    try:
-        ip = request.headers.get("X-Forwarded-For", request.client.host or "unknown").split(",")[0].strip()
-        ua = request.headers.get("User-Agent", "")[:200]
-        db.table("login_log").insert({"email": email, "ip": ip, "user_agent": ua}).execute()
-        # Check for suspicious activity (5+ unique IPs in last 24h)
-        from datetime import datetime, timedelta, timezone
-        since = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
-        logs = db.table("login_log").select("ip").eq("email", email).gte("logged_at", since).execute()
-        unique_ips = len(set(l["ip"] for l in logs.data))
-        if unique_ips >= 5:
-            db.table("subscribers").update({"notes": f"⚠️ SUSPICIOUS: {unique_ips} IPs in 24h"}).eq("email", email).execute()
-    except Exception:
-        pass
+    # Log this login attempt for IP tracking (skip for admin)
+    if email != ADMIN_EMAIL:
+        try:
+            ip = request.headers.get("X-Forwarded-For", request.client.host or "unknown").split(",")[0].strip()
+            ua = request.headers.get("User-Agent", "")[:200]
+            db.table("login_log").insert({"email": email, "ip": ip, "user_agent": ua}).execute()
+            # Check for suspicious activity (5+ unique IPs in last 24h)
+            from datetime import datetime, timedelta, timezone
+            since = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
+            logs = db.table("login_log").select("ip").eq("email", email).gte("logged_at", since).execute()
+            unique_ips = len(set(l["ip"] for l in logs.data))
+            if unique_ips >= 5:
+                db.table("subscribers").update({"notes": f"⚠️ SUSPICIOUS: {unique_ips} IPs in 24h"}).eq("email", email).execute()
+        except Exception:
+            pass
 
     sid = secrets.token_hex(32)
     SESSIONS[sid] = email
@@ -510,6 +512,8 @@ async def admin_dashboard(request: Request):
 async def admin_cancel(request: Request, email: str = Form(...)):
     if not is_admin(request):
         return RedirectResponse(url="/login")
+    if email == ADMIN_EMAIL:  # Never cancel the master account
+        return RedirectResponse(url="/admin", status_code=302)
     db.table("subscribers").update({
         "is_active": False,
         "notes": (db.table("subscribers").select("notes").eq("email",email).execute().data or [{}])[0].get("notes","") + " | CANCELLED BY ADMIN"
