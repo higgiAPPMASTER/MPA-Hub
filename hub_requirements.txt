@@ -1,0 +1,6 @@
+fastapi
+uvicorn
+python-multipart
+stripe
+supabase
+python-jose[cryptography]
