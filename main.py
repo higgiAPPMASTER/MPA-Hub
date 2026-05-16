@@ -86,7 +86,7 @@ HOME_HTML = BASE_STYLE + """
       </p>
       <p style="color:#4b5563;font-size:13px;letter-spacing:.14em;margin-bottom:40px">ONE SUBSCRIPTION. ALL 4 SPORTS.</p>
       <div style="display:flex;flex-direction:column;align-items:center;gap:12px">
-        <a href="/pricing" class="btn btn-lg" style="box-shadow:0 0 40px rgba(245,158,11,.3)">View Plans — $50/mo</a>
+        <a href="/pricing" class="btn btn-lg" style="box-shadow:0 0 40px rgba(245,158,11,.3)">View Plans</a>
         <a href="/login" style="color:#4b5563;font-size:13px;text-decoration:none">Already a member? Login →</a>
       </div>
     </div>
