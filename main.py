@@ -1,9 +1,7 @@
 from fastapi import FastAPI, Request, Form
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
-import uvicorn, os, secrets, hashlib, time
+import uvicorn, os, secrets, hashlib
 import stripe
-from jose import jwt as jose_jwt
-from datetime import datetime, timedelta, timezone
 from supabase import create_client
 
 app = FastAPI()
@@ -16,13 +14,6 @@ STRIPE_PRICE_ID   = os.environ.get("STRIPE_PRICE_ID", "")
 STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
 SITE_URL          = os.environ.get("SITE_URL", "http://localhost:8000")
 SECRET_KEY        = os.environ.get("SECRET_KEY", secrets.token_hex(32))
-JWT_SECRET        = os.environ.get("JWT_SECRET", SECRET_KEY)
-
-def make_app_token(email: str) -> str:
-    """Generate a 30-day signed JWT for app access."""
-    expire = datetime.now(timezone.utc) + timedelta(days=30)
-    return jose_jwt.encode({"sub": email, "exp": expire}, JWT_SECRET, algorithm="HS256")
-
 
 stripe.api_key = STRIPE_SECRET
 db = create_client(SUPABASE_URL, SUPABASE_KEY) if SUPABASE_URL and SUPABASE_KEY else None
@@ -75,7 +66,7 @@ HOME_HTML = BASE_STYLE + """
   <div class="logo">Money <span>Picks</span> Arena</div>
   <div class="nav-links">
     <a href="/login" class="nav-link">Member Login</a>
-    <a href="/#pricing" class="btn">View Plans</a>
+    <a href="/pricing" class="btn">View Plans</a>
   </div>
 </nav>
 
@@ -84,16 +75,20 @@ HOME_HTML = BASE_STYLE + """
   <section style="padding:100px 24px 80px;text-align:center;position:relative;overflow:hidden">
     <div style="position:absolute;inset:0;background:radial-gradient(ellipse at 50% 40%,rgba(245,158,11,.04),transparent 65%);pointer-events:none"></div>
     <div style="position:relative;max-width:760px;margin:0 auto">
-
+      <div style="display:inline-flex;align-items:center;gap:8px;background:rgba(245,158,11,.07);border:1px solid rgba(245,158,11,.15);border-radius:999px;padding:6px 18px;margin-bottom:28px">
+        <span style="width:7px;height:7px;background:#4ade80;border-radius:50%;animation:p 2s infinite"></span>
+        <span style="font-size:11px;font-weight:700;letter-spacing:.12em;color:#f59e0b">PICKS UPDATED DAILY</span>
+      </div>
+      <style>@keyframes p{0%,100%{opacity:1}50%{opacity:.35}}</style>
       <h1 class="font-display" style="font-size:clamp(42px,7vw,76px);line-height:1.05;margin-bottom:20px">
         Score Big in the<br><span class="gold">Money Picks Arena</span>
       </h1>
       <p style="color:#9ca3af;font-size:18px;margin-bottom:10px;max-width:520px;margin-left:auto;margin-right:auto;line-height:1.6">
-        Data-driven props for <strong style="color:#fff">MLB · NHL · NBA · NFL</strong> — powered by real stats and lines.
+        Data-driven picks for <strong style="color:#fff">4 sports</strong> — MLB, NHL, NBA &amp; NFL — powered by real stats and sportsbook lines.
       </p>
       <p style="color:#4b5563;font-size:13px;letter-spacing:.14em;margin-bottom:40px">ONE SUBSCRIPTION. ALL 4 SPORTS.</p>
       <div style="display:flex;flex-direction:column;align-items:center;gap:12px">
-        <a href="/#pricing" class="btn btn-lg" style="box-shadow:0 0 40px rgba(245,158,11,.3)">⚡ VIEW PLANS</a>
+        <a href="/pricing" class="btn btn-lg" style="box-shadow:0 0 40px rgba(245,158,11,.3)">View Plans — $50/mo</a>
         <a href="/login" style="color:#4b5563;font-size:13px;text-decoration:none">Already a member? Login →</a>
       </div>
     </div>
@@ -131,63 +126,7 @@ HOME_HTML = BASE_STYLE + """
     </div>
   </section>
 
-  <!-- PRICING -->
-  <section id="pricing" style="padding:60px 24px;max-width:1100px;margin:0 auto">
-    <h2 class="font-display" style="text-align:center;font-size:36px;margin-bottom:10px">Choose Your Plan</h2>
-    <p style="text-align:center;color:#6b7280;margin-bottom:48px;font-size:15px">No contracts. Cancel anytime.</p>
 
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:20px;align-items:start">
-
-      <!-- Single Sport -->
-      <div class="card" style="padding:36px;text-align:center">
-        <div style="font-size:11px;font-weight:700;letter-spacing:.12em;color:#9ca3af;text-transform:uppercase;margin-bottom:16px">Single Sport</div>
-        <div style="font-family:'Playfair Display',serif;font-size:58px;font-weight:900;color:#fff;line-height:1">$20</div>
-        <div style="color:#6b7280;font-size:13px;margin-bottom:28px">per month</div>
-        <div style="text-align:left;display:flex;flex-direction:column;gap:10px;margin-bottom:28px">
-          <div style="color:#d1d5db;font-size:13px">✅&nbsp; Pick any 1 sport</div>
-          <div style="color:#d1d5db;font-size:13px">✅&nbsp; Daily picks for your sport</div>
-          <div style="color:#d1d5db;font-size:13px">✅&nbsp; Cancel anytime</div>
-          <div style="color:#6b7280;font-size:13px">❌&nbsp; Other 3 sports not included</div>
-        </div>
-        <a href="/subscribe" class="btn" style="display:block;width:100%;text-align:center">GET STARTED</a>
-      </div>
-
-      <!-- All Access — FEATURED -->
-      <div class="card" style="padding:36px;text-align:center;border-color:rgba(245,158,11,.5);position:relative;transform:scale(1.03)">
-        <div style="position:absolute;top:-14px;left:50%;transform:translateX(-50%);background:#f59e0b;color:#000;font-size:11px;font-weight:800;letter-spacing:.1em;padding:5px 18px;border-radius:999px;white-space:nowrap">MOST POPULAR</div>
-        <div style="font-size:11px;font-weight:700;letter-spacing:.12em;color:#f59e0b;text-transform:uppercase;margin-bottom:16px">All Access</div>
-        <div style="font-family:'Playfair Display',serif;font-size:58px;font-weight:900;color:#fff;line-height:1">$50</div>
-        <div style="color:#6b7280;font-size:13px;margin-bottom:28px">per month</div>
-        <div style="text-align:left;display:flex;flex-direction:column;gap:10px;margin-bottom:28px">
-          <div style="color:#d1d5db;font-size:13px">⚾&nbsp; MLB MoneyBall</div>
-          <div style="color:#d1d5db;font-size:13px">🏒&nbsp; NHL Money Shots</div>
-          <div style="color:#d1d5db;font-size:13px">🏀&nbsp; NBA Money Buckets</div>
-          <div style="color:#d1d5db;font-size:13px">🏈&nbsp; NFL Money Bombs</div>
-          <div style="color:#d1d5db;font-size:13px">✅&nbsp; Real sportsbook lines</div>
-          <div style="color:#d1d5db;font-size:13px">✅&nbsp; Cancel anytime</div>
-        </div>
-        <a href="/subscribe" class="btn btn-lg" style="display:block;width:100%;text-align:center;box-shadow:0 0 30px rgba(245,158,11,.3)">SUBSCRIBE NOW</a>
-      </div>
-
-      <!-- Annual -->
-      <div class="card" style="padding:36px;text-align:center">
-        <div style="font-size:11px;font-weight:700;letter-spacing:.12em;color:#9ca3af;text-transform:uppercase;margin-bottom:16px">Annual — Best Value</div>
-        <div style="font-family:'Playfair Display',serif;font-size:58px;font-weight:900;color:#fff;line-height:1">$500</div>
-        <div style="color:#6b7280;font-size:13px;margin-bottom:4px">per year</div>
-        <div style="display:inline-block;background:rgba(74,222,128,.1);border:1px solid rgba(74,222,128,.2);color:#4ade80;border-radius:6px;font-size:11px;font-weight:700;padding:3px 10px;margin-bottom:24px">SAVE $100 vs monthly</div>
-        <div style="text-align:left;display:flex;flex-direction:column;gap:10px;margin-bottom:28px">
-          <div style="color:#d1d5db;font-size:13px">⚾&nbsp; MLB MoneyBall</div>
-          <div style="color:#d1d5db;font-size:13px">🏒&nbsp; NHL Money Shots</div>
-          <div style="color:#d1d5db;font-size:13px">🏀&nbsp; NBA Money Buckets</div>
-          <div style="color:#d1d5db;font-size:13px">🏈&nbsp; NFL Money Bombs</div>
-          <div style="color:#d1d5db;font-size:13px">✅&nbsp; All 4 sports for 12 months</div>
-          <div style="color:#d1d5db;font-size:13px">✅&nbsp; Priority support</div>
-        </div>
-        <a href="/subscribe" class="btn" style="display:block;width:100%;text-align:center">GET ANNUAL</a>
-      </div>
-
-    </div>
-  </section>
 </div>
 
 <footer>
@@ -204,11 +143,63 @@ HOME_HTML = BASE_STYLE + """
 </footer>
 """
 
+
+PRICING_HTML = BASE_STYLE + """
+<nav>
+  <div class="logo">Money <span>Picks</span> Arena</div>
+  <div class="nav-links">
+    <a href="/" class="nav-link">Home</a>
+    <a href="/login" class="nav-link">Member Login</a>
+  </div>
+</nav>
+
+<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;padding-top:100px">
+  <div style="width:100%;max-width:480px">
+    <div style="text-align:center;margin-bottom:32px">
+      <h1 class="font-display" style="font-size:36px;margin-bottom:8px">All Access Pass</h1>
+      <p style="color:#6b7280;font-size:15px">One subscription. All 4 sports. Updated daily.</p>
+    </div>
+    <div class="card" style="border-color:rgba(245,158,11,.4);padding:44px;text-align:center">
+      <div style="font-size:80px;font-weight:900;color:#fff;line-height:1;font-family:'Playfair Display',serif">$50</div>
+      <div style="color:#6b7280;font-size:14px;margin-bottom:32px">per month &nbsp;&middot;&nbsp; cancel anytime</div>
+      <div style="text-align:left;margin-bottom:32px;display:flex;flex-direction:column;gap:12px">
+        <div style="display:flex;align-items:center;gap:10px;color:#d1d5db;font-size:14px">
+          <span style="background:#1d4ed8;border-radius:4px;padding:2px 8px;font-size:10px;font-weight:700;color:#fff">MLB</span> MoneyBall — Daily Baseball Picks
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;color:#d1d5db;font-size:14px">
+          <span style="background:#15803d;border-radius:4px;padding:2px 8px;font-size:10px;font-weight:700;color:#fff">NHL</span> Money Shots — Daily Hockey Picks
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;color:#d1d5db;font-size:14px">
+          <span style="background:#7e22ce;border-radius:4px;padding:2px 8px;font-size:10px;font-weight:700;color:#fff">NBA</span> Money Buckets — Daily Basketball Picks
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;color:#d1d5db;font-size:14px">
+          <span style="background:#b45309;border-radius:4px;padding:2px 8px;font-size:10px;font-weight:700;color:#fff">NFL</span> Money Bombs — Weekly Football Picks
+        </div>
+        <div style="height:1px;background:#1c1c1c;margin:4px 0"></div>
+        <div style="color:#9ca3af;font-size:13px">✓ &nbsp;Real sportsbook lines included</div>
+        <div style="color:#9ca3af;font-size:13px">✓ &nbsp;Updated every morning at 10 AM ET</div>
+        <div style="color:#9ca3af;font-size:13px">✓ &nbsp;Cancel anytime — no contracts</div>
+      </div>
+      <a href="/subscribe" class="btn btn-lg" style="display:block;width:100%;text-align:center;box-shadow:0 0 30px rgba(245,158,11,.3);font-size:16px">
+        Subscribe Now
+      </a>
+      <p style="margin-top:16px;color:#4b5563;font-size:12px">
+        Already a member? <a href="/login" style="color:#f59e0b;text-decoration:none">Login here →</a>
+      </p>
+    </div>
+    <p style="text-align:center;margin-top:20px;color:#374151;font-size:11px;line-height:1.8">
+      For entertainment purposes only. Must be 18+. Please gamble responsibly.<br>
+      <a href="https://www.ncpgambling.org" target="_blank" style="color:#4b5563">Problem Gambling Help: 1-800-522-4700</a>
+    </p>
+  </div>
+</div>
+"""
+
 LOGIN_HTML = BASE_STYLE + """
 <nav>
   <div class="logo">Money <span>Picks</span> Arena</div>
   <div class="nav-links">
-    <a href="/#pricing" class="btn">View Plans</a>
+    <a href="/subscribe" class="btn">Subscribe — $50/mo</a>
   </div>
 </nav>
 <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;padding-top:100px">
@@ -270,45 +261,40 @@ DASHBOARD_HTML = BASE_STYLE + """
   <div class="nav-links">
     <span style="color:#4b5563;font-size:12px">{email}</span>
     <span style="background:rgba(74,222,128,.08);border:1px solid rgba(74,222,128,.2);color:#4ade80;font-size:11px;font-weight:700;padding:4px 12px;border-radius:999px">✓ ACTIVE</span>
-    <a href="/admin" style="color:#f59e0b;font-size:12px;font-weight:700;text-decoration:none" class="nav-link">⚙️ Admin</a>
     <a href="/logout" class="nav-link">Logout</a>
   </div>
 </nav>
 <div style="max-width:1000px;margin:0 auto;padding:100px 24px 60px">
   <h1 class="font-display" style="font-size:36px;margin-bottom:6px">Welcome back! 🏆</h1>
-  <p style="color:#6b7280;margin-bottom:16px">Choose your sport below and get today's picks.</p>
-  <div style="background:rgba(245,158,11,.06);border:1px solid rgba(245,158,11,.2);border-radius:10px;padding:12px 18px;margin-bottom:32px;display:flex;align-items:center;gap:12px;font-size:12px">
-    <span style="font-size:20px">🔐</span>
-    <span style="color:#6b7280">These picks are exclusively for <strong style="color:#f59e0b">{email}</strong> — sharing your account or picks violates our terms and will result in immediate cancellation.</span>
-  </div>
+  <p style="color:#6b7280;margin-bottom:44px">Choose your sport below and get today's picks.</p>
   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:20px">
     <div class="card" style="text-align:center;display:flex;flex-direction:column;gap:14px;align-items:center">
       <div style="font-size:52px">⚾</div>
       <span style="font-size:10px;font-weight:700;letter-spacing:.1em;background:#1d4ed8;color:#fff;padding:3px 10px;border-radius:4px">BASEBALL</span>
       <h3 class="font-display" style="font-size:20px">MLB MoneyBall</h3>
       <p style="color:#6b7280;font-size:12px;line-height:1.6">Career stats vs pitcher, H/A splits, hot streaks. Top 9 picks daily.</p>
-      <a href="/launch/mlb" target="_blank" class="btn" style="width:100%;text-align:center">🎯 OPEN PICKS</a>
+      <a href="https://moneyball-1.onrender.com" target="_blank" class="btn" style="width:100%;text-align:center">🎯 OPEN PICKS</a>
     </div>
     <div class="card" style="text-align:center;display:flex;flex-direction:column;gap:14px;align-items:center">
       <div style="font-size:52px">🏒</div>
       <span style="font-size:10px;font-weight:700;letter-spacing:.1em;background:#15803d;color:#fff;padding:3px 10px;border-radius:4px">HOCKEY</span>
       <h3 class="font-display" style="font-size:20px">NHL Money Shots</h3>
       <p style="color:#6b7280;font-size:12px;line-height:1.6">Shots on goal picks with live FanDuel sportsbook lines.</p>
-      <a href="/launch/nhl" target="_blank" class="btn" style="width:100%;text-align:center">🎯 OPEN PICKS</a>
+      <a href="https://nhl-shots.onrender.com" target="_blank" class="btn" style="width:100%;text-align:center">🎯 OPEN PICKS</a>
     </div>
     <div class="card" style="text-align:center;display:flex;flex-direction:column;gap:14px;align-items:center">
       <div style="font-size:52px">🏀</div>
       <span style="font-size:10px;font-weight:700;letter-spacing:.1em;background:#7e22ce;color:#fff;padding:3px 10px;border-radius:4px">BASKETBALL</span>
       <h3 class="font-display" style="font-size:20px">NBA Money Buckets</h3>
       <p style="color:#6b7280;font-size:12px;line-height:1.6">75%+ hit rate picks for Pts, Reb, Ast, 3PM vs today's opponent.</p>
-      <a href="/launch/nba" target="_blank" class="btn" style="width:100%;text-align:center">🎯 OPEN PICKS</a>
+      <a href="https://nba-money-buckets.onrender.com" target="_blank" class="btn" style="width:100%;text-align:center">🎯 OPEN PICKS</a>
     </div>
     <div class="card" style="text-align:center;display:flex;flex-direction:column;gap:14px;align-items:center">
       <div style="font-size:52px">🏈</div>
       <span style="font-size:10px;font-weight:700;letter-spacing:.1em;background:#b45309;color:#fff;padding:3px 10px;border-radius:4px">FOOTBALL</span>
       <h3 class="font-display" style="font-size:20px">NFL Money Bombs</h3>
       <p style="color:#6b7280;font-size:12px;line-height:1.6">Weekly NFL player prop picks with matchup analysis.</p>
-      <a href="/launch/nfl" target="_blank" class="btn" style="width:100%;text-align:center">🎯 OPEN PICKS</a>
+      <a href="https://nfl-money-bombs.onrender.com" target="_blank" class="btn" style="width:100%;text-align:center">🎯 OPEN PICKS</a>
     </div>
   </div>
 </div>
@@ -321,14 +307,14 @@ async def home():
     return HOME_HTML
 
 # ── Stripe Checkout ────────────────────────────────────────────────────────────
+@app.get("/pricing", response_class=HTMLResponse)
+async def pricing():
+    return PRICING_HTML
+
 @app.get("/subscribe")
 async def subscribe():
     try:
-        if not STRIPE_SECRET:
-            return HTMLResponse("<pre style='color:red;padding:40px'>ERROR: STRIPE_SECRET_KEY not set in Render env vars</pre>")
-        if not STRIPE_PRICE_ID:
-            return HTMLResponse("<pre style='color:red;padding:40px'>ERROR: STRIPE_PRICE_ID not set in Render env vars</pre>")
-        session = stripe.checkout.Session.create(
+        session = stripe.checkout.sessions.create(
             payment_method_types=["card"],
             mode="subscription",
             line_items=[{"price": STRIPE_PRICE_ID, "quantity": 1}],
@@ -337,8 +323,7 @@ async def subscribe():
         )
         return RedirectResponse(url=session.url)
     except Exception as e:
-        import traceback
-        return HTMLResponse(f"<pre style='color:red;font-family:monospace;padding:40px;background:#111'>STRIPE ERROR: {repr(e)}\n\n{traceback.format_exc()}\n\nKey starts with: {STRIPE_SECRET_KEY[:12]}...\nPrice ID: {STRIPE_PRICE_ID}\nSite URL: {SITE_URL}</pre><a href='/' style='color:#f59e0b;padding:40px;display:block'>Go back</a>")
+        return HTMLResponse(f"<p style='color:red;font-family:sans-serif;padding:40px'>Stripe error: {e}<br><a href='/'>Go back</a></p>")
 
 # ── Register (after Stripe payment) ───────────────────────────────────────────
 @app.get("/register", response_class=HTMLResponse)
@@ -346,16 +331,11 @@ async def register_get(session_id: str = ""):
     if not session_id:
         return RedirectResponse(url="/")
     try:
-        session = stripe.checkout.Session.retrieve(session_id)
-        # Try multiple ways to get email from Stripe session
-        email = (
-            getattr(getattr(session, 'customer_details', None), 'email', None) or
-            getattr(session, 'customer_email', None) or
-            ""
-        )
+        session = stripe.checkout.sessions.retrieve(session_id)
+        email = session.customer_details.email if session.customer_details else ""
         return REGISTER_HTML.replace("{email}", email).replace("{session_id}", session_id).replace("{error}", "")
-    except Exception as e:
-        return HTMLResponse(f"<pre style='color:red;padding:40px;font-family:monospace;background:#111'>Register error: {repr(e)}\nSession ID: {session_id}</pre><a href='/' style='color:#f59e0b;padding:40px;display:block'>Go back</a>")
+    except:
+        return RedirectResponse(url="/")
 
 @app.post("/register", response_class=HTMLResponse)
 async def register_post(
@@ -380,7 +360,7 @@ async def register_post(
 
     # Get Stripe details
     try:
-        session = stripe.checkout.Session.retrieve(session_id)
+        session = stripe.checkout.sessions.retrieve(session_id)
         customer_id = session.customer
         subscription_id = session.subscription
     except:
@@ -409,13 +389,13 @@ async def login_get():
     return LOGIN_HTML.replace("{error}", "")
 
 @app.post("/login", response_class=HTMLResponse)
-async def login_post(request: Request, email: str = Form(...), password: str = Form(...)):
+async def login_post(email: str = Form(...), password: str = Form(...)):
     # ── Admin bypass ──────────────────────────────────────────────────────
     if ADMIN_EMAIL and email == ADMIN_EMAIL and password == ADMIN_PASSWORD:
         sid = secrets.token_hex(32)
         SESSIONS[sid] = email
         resp = RedirectResponse(url="/dashboard", status_code=302)
-        resp.set_cookie("sid", sid, httponly=True, samesite="lax", max_age=60 * 60 * 24 * 365)  # 1 year
+        resp.set_cookie("sid", sid, httponly=True, samesite="lax", max_age=60 * 60 * 24 * 30)
         return resp
 
     result = db.table("subscribers").select("*").eq("email", email).execute()
@@ -428,22 +408,6 @@ async def login_post(request: Request, email: str = Form(...), password: str = F
 
     if not user.get("is_active"):
         return LOGIN_HTML.replace("{error}", '<div class="error-box">❌ Your subscription is inactive. <a href="/subscribe" style="color:#f59e0b">Renew here.</a></div>')
-
-    # Log this login attempt for IP tracking (skip for admin)
-    if email != ADMIN_EMAIL:
-        try:
-            ip = (request.headers.get("X-Forwarded-For") or (request.client.host if request.client else "unknown")).split(",")[0].strip()
-            ua = request.headers.get("User-Agent", "")[:200]
-            db.table("login_log").insert({"email": email, "ip": ip, "user_agent": ua}).execute()
-            # Check for suspicious activity (5+ unique IPs in last 24h)
-            from datetime import datetime, timedelta, timezone
-            since = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
-            logs = db.table("login_log").select("ip").eq("email", email).gte("logged_at", since).execute()
-            unique_ips = len(set(l["ip"] for l in logs.data))
-            if unique_ips >= 5:
-                db.table("subscribers").update({"notes": f"⚠️ SUSPICIOUS: {unique_ips} IPs in 24h"}).eq("email", email).execute()
-        except Exception:
-            pass
 
     sid = secrets.token_hex(32)
     SESSIONS[sid] = email
@@ -460,26 +424,6 @@ async def dashboard(request: Request):
     return DASHBOARD_HTML.replace("{email}", user)
 
 # ── Logout ─────────────────────────────────────────────────────────────────────
-
-# ── App Launch Endpoints (hub → app with JWT) ─────────────────────────────────
-APP_URLS = {
-    "mlb": "https://moneyball-1.onrender.com",
-    "nhl": "https://nhl-shots.onrender.com",
-    "nba": "https://nba-money-buckets.onrender.com",
-    "nfl": "https://nfl-money-bombs.onrender.com",
-}
-
-@app.get("/launch/{sport}")
-async def launch_app(sport: str, request: Request):
-    user = get_user(request)
-    if not user:
-        return RedirectResponse(url="/login")
-    app_url = APP_URLS.get(sport)
-    if not app_url:
-        return RedirectResponse(url="/dashboard")
-    token = make_app_token(user)
-    return RedirectResponse(url=f"{app_url}/?token={token}", status_code=302)
-
 @app.get("/logout")
 async def logout(request: Request):
     sid = request.cookies.get("sid")
@@ -488,200 +432,6 @@ async def logout(request: Request):
     resp = RedirectResponse(url="/")
     resp.delete_cookie("sid")
     return resp
-
-
-# ── Admin Dashboard ────────────────────────────────────────────────────────────
-def is_admin(request: Request) -> bool:
-    sid = request.cookies.get("sid")
-    email = SESSIONS.get(sid, "") if sid else ""
-    return email == ADMIN_EMAIL and bool(ADMIN_EMAIL)
-
-@app.get("/admin", response_class=HTMLResponse)
-async def admin_dashboard(request: Request):
-    if not is_admin(request):
-        return RedirectResponse(url="/login")
-
-    from datetime import datetime, timedelta, timezone
-    from collections import defaultdict
-
-    # Get all subscribers (wrapped in try/except)
-    try:
-        subs = db.table("subscribers").select("*").execute().data or []
-        subs.sort(key=lambda x: x.get("created_at",""), reverse=True)
-    except Exception as e:
-        return HTMLResponse(f"<h2>DB Error fetching subscribers: {e}</h2>")
-
-    # Get login logs (may not exist yet — handled gracefully)
-    all_logs = []
-    try:
-        since = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
-        all_logs = db.table("login_log").select("email,ip,logged_at").gte("logged_at", since).execute().data or []
-    except Exception:
-        pass  # login_log table may not exist yet — that's OK
-
-    # Build per-user stats
-    from collections import defaultdict
-    ip_map = defaultdict(set)
-    last_login_map = {}
-    for log in all_logs:
-        ip_map[log["email"]].add(log["ip"])
-        ts = log.get("logged_at","")
-        if ts > last_login_map.get(log["email"],""):
-            last_login_map[log["email"]] = ts
-
-    rows = ""
-    for s in subs:
-        em = s["email"]
-        active = s.get("is_active", False)
-        ips = ip_map.get(em, set())
-        ip_count = len(ips)
-        last_ip = list(ips)[-1] if ips else "—"
-        last_seen = last_login_map.get(em, "—")[:16].replace("T"," ") if last_login_map.get(em) else "—"
-        notes = s.get("notes","") or ""
-        suspicious = "⚠️" in notes
-        status_badge = '<span style="color:#4ade80;font-weight:700">✅ Active</span>' if active else '<span style="color:#f87171;font-weight:700">❌ Inactive</span>'
-        sus_badge = '<span style="background:#7f1d1d;color:#fca5a5;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700">⚠️ SUSPICIOUS</span>' if suspicious else ""
-        ip_color = "#fca5a5" if ip_count >= 5 else "#f59e0b" if ip_count >= 3 else "#4ade80"
-        cancel_btn = f'<form method="post" action="/admin/cancel" style="display:inline"><input type="hidden" name="email" value="{em}"><button style="background:#7f1d1d;color:#fca5a5;border:1px solid #991b1b;border-radius:6px;padding:4px 12px;font-size:11px;cursor:pointer;font-weight:700">❌ Cancel</button></form>' if active else f'<form method="post" action="/admin/reinstate" style="display:inline"><input type="hidden" name="email" value="{em}"><button style="background:#14532d;color:#86efac;border:1px solid #166534;border-radius:6px;padding:4px 12px;font-size:11px;cursor:pointer;font-weight:700">✅ Reinstate</button></form>'
-        rows += f"""<tr style="border-bottom:1px solid #1f2937">
-          <td style="padding:12px 14px;color:#e5e7eb;font-size:13px">{em}</td>
-          <td style="padding:12px 14px">{status_badge}</td>
-          <td style="padding:12px 14px;color:{ip_color};font-weight:700;font-size:13px">{ip_count} IPs {sus_badge}</td>
-          <td style="padding:12px 14px;color:#9ca3af;font-size:12px;font-family:monospace">{last_ip}</td>
-          <td style="padding:12px 14px;color:#9ca3af;font-size:12px">{last_seen}</td>
-          <td style="padding:12px 14px;color:#9ca3af;font-size:11px;max-width:180px">{notes}</td>
-          <td style="padding:12px 14px">{cancel_btn}</td>
-        </tr>"""
-
-    total = len(subs)
-    active_count = sum(1 for s in subs if s.get("is_active"))
-    suspicious_count = sum(1 for s in subs if "⚠️" in (s.get("notes","") or ""))
-
-    html = f"""<!DOCTYPE html><html><head><meta charset="UTF-8">
-<title>MPA Admin</title>
-<style>
-  body{{background:#0a0a0a;color:#e5e7eb;font-family:'Segoe UI',sans-serif;padding:32px}}
-  h1{{color:#f59e0b;font-size:28px;margin-bottom:4px}}
-  .stats{{display:flex;gap:20px;margin:20px 0}}
-  .stat{{background:#111;border:1px solid #1f2937;border-radius:10px;padding:16px 24px;text-align:center}}
-  .stat .n{{font-size:28px;font-weight:900;color:#f59e0b}}
-  .stat .l{{font-size:11px;color:#6b7280;text-transform:uppercase;letter-spacing:1px;margin-top:4px}}
-  table{{width:100%;border-collapse:collapse;background:#111;border-radius:10px;overflow:hidden;border:1px solid #1f2937}}
-  th{{background:#0a0a0a;padding:10px 14px;text-align:left;color:#f59e0b;font-size:11px;text-transform:uppercase;letter-spacing:1px;white-space:nowrap}}
-  tr:hover td{{background:#1a1a1a}}
-  .back{{color:#f59e0b;text-decoration:none;font-size:13px;display:inline-block;margin-bottom:20px}}
-</style></head><body>
-  <a href="/dashboard" class="back">← Back to Dashboard</a>
-  <h1>🔐 Money Picks Arena — Admin</h1>
-  <p style="color:#6b7280;margin-bottom:20px">Manage subscribers, detect sharing, cancel accounts.</p>
-  <div class="stats">
-    <div class="stat"><div class="n">{total}</div><div class="l">Total Members</div></div>
-    <div class="stat"><div class="n" style="color:#4ade80">{active_count}</div><div class="l">Active</div></div>
-    <div class="stat"><div class="n" style="color:#fca5a5">{total-active_count}</div><div class="l">Inactive</div></div>
-    <div class="stat"><div class="n" style="color:#fca5a5">{suspicious_count}</div><div class="l">Suspicious ⚠️</div></div>
-  </div>
-  <table>
-    <thead><tr>
-      <th>Email</th><th>Status</th><th>Unique IPs (30d)</th>
-      <th>Last IP</th><th>Last Seen</th><th>Notes</th><th>Action</th>
-    </tr></thead>
-    <tbody>{rows}</tbody>
-  </table>
-  <p style="color:#374151;font-size:11px;margin-top:16px">⚠️ = 5+ unique IPs in 24h &nbsp;|&nbsp; 🟡 = 3-4 IPs &nbsp;|&nbsp; 🟢 = 1-2 IPs</p>
-
-  <div style="background:#111;border:1px solid #1f2937;border-radius:10px;padding:24px;margin-top:28px;max-width:480px">
-    <h3 style="color:#f59e0b;font-size:16px;margin-bottom:4px">➕ Create User (No Stripe needed)</h3>
-    <p style="color:#6b7280;font-size:12px;margin-bottom:16px">Use for test accounts, comped users, or friends.</p>
-    <form method="post" action="/admin/create-user">
-      <div style="margin-bottom:12px">
-        <label style="display:block;color:#9ca3af;font-size:11px;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Email</label>
-        <input name="email" type="email" required placeholder="user@example.com"
-               style="width:100%;background:#0a0a0a;border:1px solid #374151;border-radius:8px;padding:10px 14px;color:#fff;font-size:13px;outline:none;box-sizing:border-box">
-      </div>
-      <div style="margin-bottom:12px">
-        <label style="display:block;color:#9ca3af;font-size:11px;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Password</label>
-        <input name="password" type="text" required placeholder="Choose a password for them"
-               style="width:100%;background:#0a0a0a;border:1px solid #374151;border-radius:8px;padding:10px 14px;color:#fff;font-size:13px;outline:none;box-sizing:border-box">
-      </div>
-      <div style="margin-bottom:16px">
-        <label style="display:block;color:#9ca3af;font-size:11px;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Notes (optional)</label>
-        <input name="notes" type="text" placeholder="e.g. Test user - John"
-               style="width:100%;background:#0a0a0a;border:1px solid #374151;border-radius:8px;padding:10px 14px;color:#fff;font-size:13px;outline:none;box-sizing:border-box">
-      </div>
-      <button type="submit"
-              style="background:linear-gradient(135deg,#f59e0b,#d97706);color:#000;border:none;border-radius:8px;padding:12px 28px;font-size:13px;font-weight:900;cursor:pointer;width:100%">
-        ➕ Create User
-      </button>
-    </form>
-  </div>
-</body></html>"""
-    return HTMLResponse(html)
-
-
-@app.post("/admin/cancel")
-async def admin_cancel(request: Request, email: str = Form(...)):
-    if not is_admin(request):
-        return RedirectResponse(url="/login")
-    if email == ADMIN_EMAIL:  # Never cancel the master account
-        return RedirectResponse(url="/admin", status_code=302)
-    db.table("subscribers").update({
-        "is_active": False,
-        "notes": (db.table("subscribers").select("notes").eq("email",email).execute().data or [{}])[0].get("notes","") + " | CANCELLED BY ADMIN"
-    }).eq("email", email).execute()
-    # Cancel Stripe subscription if exists
-    try:
-        sub = db.table("subscribers").select("stripe_subscription_id").eq("email",email).execute().data
-        if sub and sub[0].get("stripe_subscription_id"):
-            stripe.Subscription.cancel(sub[0]["stripe_subscription_id"])
-    except Exception:
-        pass
-    return RedirectResponse(url="/admin", status_code=302)
-
-
-@app.post("/admin/reinstate")
-async def admin_reinstate(request: Request, email: str = Form(...)):
-    if not is_admin(request):
-        return RedirectResponse(url="/login")
-    db.table("subscribers").update({"is_active": True}).eq("email", email).execute()
-    return RedirectResponse(url="/admin", status_code=302)
-
-
-@app.post("/admin/create-user")
-async def admin_create_user(
-    request: Request,
-    email: str = Form(...),
-    password: str = Form(...),
-    notes: str = Form("")
-):
-    if not is_admin(request):
-        return RedirectResponse(url="/login")
-    try:
-        # Check if user already exists
-        existing = db.table("subscribers").select("id").eq("email", email).execute().data
-        if existing:
-            return HTMLResponse(f"""<html><body style="background:#0a0a0a;color:#f87171;font-family:sans-serif;padding:40px">
-                <h2>❌ User already exists: {email}</h2>
-                <a href="/admin" style="color:#f59e0b">← Back to Admin</a>
-            </body></html>""")
-        # Create the user
-        db.table("subscribers").insert({
-            "email":         email,
-            "password_hash": hash_pw(password),
-            "is_active":     True,
-            "notes":         notes or "Created by admin (no Stripe)"
-        }).execute()
-        return HTMLResponse(f"""<html><body style="background:#0a0a0a;color:#4ade80;font-family:sans-serif;padding:40px">
-            <h2>✅ User created successfully!</h2>
-            <p style="color:#9ca3af;margin:12px 0">Email: <strong style="color:#fff">{email}</strong></p>
-            <p style="color:#9ca3af;margin:12px 0">Password: <strong style="color:#fff">{password}</strong></p>
-            <p style="color:#6b7280;font-size:13px;margin-top:20px">Share these credentials with your test user. They can log in at your hub URL.</p>
-            <a href="/admin" style="color:#f59e0b;display:inline-block;margin-top:20px">← Back to Admin</a>
-        </body></html>""")
-    except Exception as e:
-        return HTMLResponse(f"""<html><body style="background:#0a0a0a;color:#f87171;font-family:sans-serif;padding:40px">
-            <h2>❌ Error: {e}</h2>
-            <a href="/admin" style="color:#f59e0b">← Back to Admin</a>
-        </body></html>""")
 
 # ── Stripe Webhook ─────────────────────────────────────────────────────────────
 @app.post("/webhook")
