@@ -18,6 +18,21 @@ SITE_URL          = os.environ.get("SITE_URL", "http://localhost:8000")
 SECRET_KEY        = os.environ.get("SECRET_KEY", secrets.token_hex(32))
 
 stripe.api_key = STRIPE_SECRET
+
+# App URLs
+APP_URLS = {
+    "mlb": "https://moneyball-1.onrender.com",
+    "nhl": "https://nhl-shots-picks.onrender.com",
+    "nba": "https://nba-money-buckets.onrender.com",
+    "nfl": "https://nfl-money-bombs.onrender.com",
+}
+
+def make_app_token(email: str) -> str:
+    """Generate a JWT for app access using Hub's SECRET_KEY."""
+    from jose import jwt as _jwt
+    from datetime import datetime, timedelta
+    payload = {"sub": email, "exp": datetime.utcnow() + timedelta(hours=24)}
+    return _jwt.encode(payload, SECRET_KEY, algorithm="HS256")
 db = create_client(SUPABASE_URL, SUPABASE_KEY) if SUPABASE_URL and SUPABASE_KEY else None
 
 ADMIN_EMAIL    = os.environ.get("ADMIN_EMAIL", "")
@@ -301,28 +316,28 @@ DASHBOARD_HTML = BASE_STYLE + """
       <span style="font-size:10px;font-weight:700;letter-spacing:.1em;background:#1d4ed8;color:#fff;padding:3px 10px;border-radius:4px">BASEBALL</span>
       <h3 class="font-display" style="font-size:20px">MLB MoneyBall</h3>
       <p style="color:#6b7280;font-size:12px;line-height:1.6">Career stats vs pitcher, H/A splits, hot streaks. Top 9 picks daily.</p>
-      <a href="https://moneyball-1.onrender.com" target="_blank" class="btn" style="width:100%;text-align:center">🎯 OPEN PICKS</a>
+      <a href="/open/mlb" class="btn" style="width:100%;text-align:center">🎯 OPEN PICKS</a>
     </div>
     <div class="card" style="text-align:center;display:flex;flex-direction:column;gap:14px;align-items:center">
       <div style="font-size:52px">🏒</div>
       <span style="font-size:10px;font-weight:700;letter-spacing:.1em;background:#15803d;color:#fff;padding:3px 10px;border-radius:4px">HOCKEY</span>
       <h3 class="font-display" style="font-size:20px">NHL Money Shots</h3>
       <p style="color:#6b7280;font-size:12px;line-height:1.6">Shots on goal picks with live FanDuel sportsbook lines.</p>
-      <a href="https://nhl-shots.onrender.com" target="_blank" class="btn" style="width:100%;text-align:center">🎯 OPEN PICKS</a>
+      <a href="/open/nhl" class="btn" style="width:100%;text-align:center">🎯 OPEN PICKS</a>
     </div>
     <div class="card" style="text-align:center;display:flex;flex-direction:column;gap:14px;align-items:center">
       <div style="font-size:52px">🏀</div>
       <span style="font-size:10px;font-weight:700;letter-spacing:.1em;background:#7e22ce;color:#fff;padding:3px 10px;border-radius:4px">BASKETBALL</span>
       <h3 class="font-display" style="font-size:20px">NBA Money Buckets</h3>
       <p style="color:#6b7280;font-size:12px;line-height:1.6">75%+ hit rate picks for Pts, Reb, Ast, 3PM vs today's opponent.</p>
-      <a href="https://nba-money-buckets.onrender.com" target="_blank" class="btn" style="width:100%;text-align:center">🎯 OPEN PICKS</a>
+      <a href="/open/nba" class="btn" style="width:100%;text-align:center">🎯 OPEN PICKS</a>
     </div>
     <div class="card" style="text-align:center;display:flex;flex-direction:column;gap:14px;align-items:center">
       <div style="font-size:52px">🏈</div>
       <span style="font-size:10px;font-weight:700;letter-spacing:.1em;background:#b45309;color:#fff;padding:3px 10px;border-radius:4px">FOOTBALL</span>
       <h3 class="font-display" style="font-size:20px">NFL Money Bombs</h3>
       <p style="color:#6b7280;font-size:12px;line-height:1.6">Weekly NFL player prop picks with matchup analysis.</p>
-      <a href="https://nfl-money-bombs.onrender.com" target="_blank" class="btn" style="width:100%;text-align:center">🎯 OPEN PICKS</a>
+      <a href="/open/nfl" class="btn" style="width:100%;text-align:center">🎯 OPEN PICKS</a>
     </div>
   </div>
 </div>
@@ -335,6 +350,19 @@ async def home():
     return HOME_HTML
 
 # ── Stripe Checkout ────────────────────────────────────────────────────────────
+@app.get("/open/{app_name}")
+async def open_app(app_name: str, request: Request):
+    """Redirect to sport app with JWT token for access."""
+    sid   = request.cookies.get("sid")
+    email = SESSIONS.get(sid, "") if sid else ""
+    if not email:
+        return RedirectResponse("/login")
+    url = APP_URLS.get(app_name.lower())
+    if not url:
+        return RedirectResponse("/dashboard")
+    token = make_app_token(email)
+    return RedirectResponse(f"{url}?token={token}")
+
 @app.get("/pricing", response_class=HTMLResponse)
 async def pricing():
     return PRICING_HTML
