@@ -107,25 +107,25 @@ HOME_HTML = BASE_STYLE + """
         <div style="font-size:44px;margin-bottom:12px">⚾</div>
         <div style="font-size:10px;font-weight:700;letter-spacing:.1em;color:#fff;background:#1d4ed8;padding:3px 10px;border-radius:4px;display:inline-block;margin-bottom:10px">BASEBALL</div>
         <h3 class="font-display" style="font-size:18px;margin-bottom:8px">MLB MoneyBall</h3>
-        <p style="color:#6b7280;font-size:12px;line-height:1.6">Career BA vs pitcher, H/A splits, hot streaks. Top 9 picks daily.</p>
+        
       </div>
       <div class="card" style="text-align:center">
         <div style="font-size:44px;margin-bottom:12px">🏒</div>
         <div style="font-size:10px;font-weight:700;letter-spacing:.1em;color:#fff;background:#15803d;padding:3px 10px;border-radius:4px;display:inline-block;margin-bottom:10px">HOCKEY</div>
         <h3 class="font-display" style="font-size:18px;margin-bottom:8px">NHL Money Shots</h3>
-        <p style="color:#6b7280;font-size:12px;line-height:1.6">Shots on goal picks with live FanDuel sportsbook lines.</p>
+        
       </div>
       <div class="card" style="text-align:center">
         <div style="font-size:44px;margin-bottom:12px">🏀</div>
         <div style="font-size:10px;font-weight:700;letter-spacing:.1em;color:#fff;background:#7e22ce;padding:3px 10px;border-radius:4px;display:inline-block;margin-bottom:10px">BASKETBALL</div>
         <h3 class="font-display" style="font-size:18px;margin-bottom:8px">NBA Money Buckets</h3>
-        <p style="color:#6b7280;font-size:12px;line-height:1.6">75%+ hit rate picks for Pts, Reb, Ast, 3PM.</p>
+        
       </div>
       <div class="card" style="text-align:center">
         <div style="font-size:44px;margin-bottom:12px">🏈</div>
         <div style="font-size:10px;font-weight:700;letter-spacing:.1em;color:#fff;background:#b45309;padding:3px 10px;border-radius:4px;display:inline-block;margin-bottom:10px">FOOTBALL</div>
         <h3 class="font-display" style="font-size:18px;margin-bottom:8px">NFL Money Bombs</h3>
-        <p style="color:#6b7280;font-size:12px;line-height:1.6">Weekly NFL player prop picks with matchup analysis.</p>
+        
       </div>
     </div>
   </section>
@@ -293,28 +293,28 @@ DASHBOARD_HTML = BASE_STYLE + """
       <div style="font-size:52px">⚾</div>
       <span style="font-size:10px;font-weight:700;letter-spacing:.1em;background:#1d4ed8;color:#fff;padding:3px 10px;border-radius:4px">BASEBALL</span>
       <h3 class="font-display" style="font-size:20px">MLB MoneyBall</h3>
-      <p style="color:#6b7280;font-size:12px;line-height:1.6">Career stats vs pitcher, H/A splits, hot streaks. Top 9 picks daily.</p>
+      
       <a href="https://moneyball-1.onrender.com" target="_blank" class="btn" style="width:100%;text-align:center">🎯 OPEN PICKS</a>
     </div>
     <div class="card" style="text-align:center;display:flex;flex-direction:column;gap:14px;align-items:center">
       <div style="font-size:52px">🏒</div>
       <span style="font-size:10px;font-weight:700;letter-spacing:.1em;background:#15803d;color:#fff;padding:3px 10px;border-radius:4px">HOCKEY</span>
       <h3 class="font-display" style="font-size:20px">NHL Money Shots</h3>
-      <p style="color:#6b7280;font-size:12px;line-height:1.6">Shots on goal picks with live FanDuel sportsbook lines.</p>
+      
       <a href="https://nhl-shots.onrender.com" target="_blank" class="btn" style="width:100%;text-align:center">🎯 OPEN PICKS</a>
     </div>
     <div class="card" style="text-align:center;display:flex;flex-direction:column;gap:14px;align-items:center">
       <div style="font-size:52px">🏀</div>
       <span style="font-size:10px;font-weight:700;letter-spacing:.1em;background:#7e22ce;color:#fff;padding:3px 10px;border-radius:4px">BASKETBALL</span>
       <h3 class="font-display" style="font-size:20px">NBA Money Buckets</h3>
-      <p style="color:#6b7280;font-size:12px;line-height:1.6">75%+ hit rate picks for Pts, Reb, Ast, 3PM vs today's opponent.</p>
+      
       <a href="https://nba-money-buckets.onrender.com" target="_blank" class="btn" style="width:100%;text-align:center">🎯 OPEN PICKS</a>
     </div>
     <div class="card" style="text-align:center;display:flex;flex-direction:column;gap:14px;align-items:center">
       <div style="font-size:52px">🏈</div>
       <span style="font-size:10px;font-weight:700;letter-spacing:.1em;background:#b45309;color:#fff;padding:3px 10px;border-radius:4px">FOOTBALL</span>
       <h3 class="font-display" style="font-size:20px">NFL Money Bombs</h3>
-      <p style="color:#6b7280;font-size:12px;line-height:1.6">Weekly NFL player prop picks with matchup analysis.</p>
+      
       <a href="https://nfl-money-bombs.onrender.com" target="_blank" class="btn" style="width:100%;text-align:center">🎯 OPEN PICKS</a>
     </div>
   </div>
