@@ -18,6 +18,13 @@ SITE_URL          = os.environ.get("SITE_URL", "http://localhost:8000")
 SECRET_KEY        = os.environ.get("SECRET_KEY", secrets.token_hex(32))
 
 stripe.api_key = STRIPE_SECRET
+JWT_SECRET = os.environ.get("JWT_SECRET", "")
+
+def make_app_token(email):
+    from jose import jwt as _jwt
+    from datetime import datetime, timedelta
+    key = JWT_SECRET or SECRET_KEY
+    return _jwt.encode({"sub": email, "exp": datetime.utcnow() + timedelta(hours=24)}, key, algorithm="HS256")
 db = create_client(SUPABASE_URL, SUPABASE_KEY) if SUPABASE_URL and SUPABASE_KEY else None
 
 ADMIN_EMAIL    = os.environ.get("ADMIN_EMAIL", "")
