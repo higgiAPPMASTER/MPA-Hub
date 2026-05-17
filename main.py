@@ -10,29 +10,12 @@ app = FastAPI()
 SUPABASE_URL      = os.environ.get("SUPABASE_URL", "")
 SUPABASE_KEY      = os.environ.get("SUPABASE_SERVICE_KEY", "")
 STRIPE_SECRET     = os.environ.get("STRIPE_SECRET_KEY", "")
-STRIPE_PRICE_ID        = os.environ.get("STRIPE_PRICE_ID", "")
-STRIPE_PRICE_ID_SINGLE = os.environ.get("STRIPE_PRICE_ID_SINGLE", "")
-STRIPE_PRICE_ID_YEARLY = os.environ.get("STRIPE_PRICE_ID_YEARLY", "")
+STRIPE_PRICE_ID   = os.environ.get("STRIPE_PRICE_ID", "")
 STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
 SITE_URL          = os.environ.get("SITE_URL", "http://localhost:8000")
 SECRET_KEY        = os.environ.get("SECRET_KEY", secrets.token_hex(32))
 
 stripe.api_key = STRIPE_SECRET
-JWT_SECRET = os.environ.get("JWT_SECRET", "")
-
-APP_URLS = {
-    "mlb": "https://moneyball-1.onrender.com",
-    "nhl": "https://nhl-shots-picks.onrender.com",
-    "nba": "https://nba-money-buckets.onrender.com",
-    "nfl": "https://nfl-money-bombs.onrender.com",
-}
-
-def make_app_token(email: str) -> str:
-    from jose import jwt as _jwt
-    from datetime import datetime, timedelta
-    key = JWT_SECRET or SECRET_KEY
-    payload = {"sub": email, "exp": datetime.utcnow() + timedelta(hours=24)}
-    return _jwt.encode(payload, key, algorithm="HS256")
 db = create_client(SUPABASE_URL, SUPABASE_KEY) if SUPABASE_URL and SUPABASE_KEY else None
 
 ADMIN_EMAIL    = os.environ.get("ADMIN_EMAIL", "")
@@ -83,7 +66,7 @@ HOME_HTML = BASE_STYLE + """
   <div class="logo">Money <span>Picks</span> Arena</div>
   <div class="nav-links">
     <a href="/login" class="nav-link">Member Login</a>
-    <a href="/pricing" class="btn">View Plans</a>
+    <a href="/subscribe" class="btn">Subscribe — $50/mo</a>
   </div>
 </nav>
 
@@ -92,6 +75,11 @@ HOME_HTML = BASE_STYLE + """
   <section style="padding:100px 24px 80px;text-align:center;position:relative;overflow:hidden">
     <div style="position:absolute;inset:0;background:radial-gradient(ellipse at 50% 40%,rgba(245,158,11,.04),transparent 65%);pointer-events:none"></div>
     <div style="position:relative;max-width:760px;margin:0 auto">
+      <div style="display:inline-flex;align-items:center;gap:8px;background:rgba(245,158,11,.07);border:1px solid rgba(245,158,11,.15);border-radius:999px;padding:6px 18px;margin-bottom:28px">
+        <span style="width:7px;height:7px;background:#4ade80;border-radius:50%;animation:p 2s infinite"></span>
+        <span style="font-size:11px;font-weight:700;letter-spacing:.12em;color:#f59e0b">PICKS UPDATED DAILY</span>
+      </div>
+      <style>@keyframes p{0%,100%{opacity:1}50%{opacity:.35}}</style>
       <h1 class="font-display" style="font-size:clamp(42px,7vw,76px);line-height:1.05;margin-bottom:20px">
         Score Big in the<br><span class="gold">Money Picks Arena</span>
       </h1>
@@ -100,7 +88,7 @@ HOME_HTML = BASE_STYLE + """
       </p>
       <p style="color:#4b5563;font-size:13px;letter-spacing:.14em;margin-bottom:40px">ONE SUBSCRIPTION. ALL 4 SPORTS.</p>
       <div style="display:flex;flex-direction:column;align-items:center;gap:12px">
-        <a href="/pricing" class="btn btn-lg" style="box-shadow:0 0 40px rgba(245,158,11,.3)">View Plans — $50/mo</a>
+        <a href="/subscribe" class="btn btn-lg" style="box-shadow:0 0 40px rgba(245,158,11,.3)">⚡ SUBSCRIBE NOW — $50/MO</a>
         <a href="/login" style="color:#4b5563;font-size:13px;text-decoration:none">Already a member? Login →</a>
       </div>
     </div>
@@ -138,7 +126,24 @@ HOME_HTML = BASE_STYLE + """
     </div>
   </section>
 
-  
+  <!-- PRICING -->
+  <section style="padding:60px 24px;max-width:460px;margin:0 auto">
+    <div class="card" style="border-color:rgba(245,158,11,.35);text-align:center;padding:44px">
+      <h2 class="font-display" style="font-size:26px;margin-bottom:4px">All Access Pass</h2>
+      <p style="color:#6b7280;margin-bottom:24px;font-size:14px">One subscription. Every sport.</p>
+      <div style="font-size:68px;font-weight:900;color:#fff;line-height:1;font-family:'Playfair Display',serif">$50</div>
+      <div style="color:#6b7280;margin-bottom:28px">per month</div>
+      <div style="text-align:left;margin-bottom:28px;display:flex;flex-direction:column;gap:10px">
+        <div style="color:#d1d5db;font-size:13px">⚾&nbsp; MLB MoneyBall — Daily Baseball Picks</div>
+        <div style="color:#d1d5db;font-size:13px">🏒&nbsp; NHL Money Shots — Daily Hockey Picks</div>
+        <div style="color:#d1d5db;font-size:13px">🏀&nbsp; NBA Money Buckets — Daily Basketball Picks</div>
+        <div style="color:#d1d5db;font-size:13px">🏈&nbsp; NFL Money Bombs — Weekly Football Picks</div>
+        <div style="color:#d1d5db;font-size:13px">✅&nbsp; Real sportsbook lines included</div>
+        <div style="color:#d1d5db;font-size:13px">✅&nbsp; Cancel anytime</div>
+      </div>
+      <a href="/subscribe" class="btn btn-lg" style="display:block;width:100%;text-align:center;box-shadow:0 0 30px rgba(245,158,11,.25)">SUBSCRIBE NOW</a>
+    </div>
+  </section>
 </div>
 
 <footer>
@@ -155,75 +160,11 @@ HOME_HTML = BASE_STYLE + """
 </footer>
 """
 
-
-PRICING_HTML = BASE_STYLE + """
-<nav>
-  <div class="logo">Money <span>Picks</span> Arena</div>
-  <div class="nav-links">
-    <a href="/" class="nav-link">Home</a>
-    <a href="/login" class="nav-link">Member Login</a>
-  </div>
-</nav>
-<div style="padding-top:100px;padding-bottom:60px;min-height:100vh">
-  <div style="text-align:center;margin-bottom:44px;padding:0 24px">
-    <h1 class="font-display" style="font-size:42px;margin-bottom:10px">Choose Your Plan</h1>
-    <p style="color:#6b7280;font-size:15px">Pick the plan that works for you. Cancel anytime.</p>
-  </div>
-  <div style="max-width:1000px;margin:0 auto;padding:0 24px;display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:24px;align-items:start">
-    <div class="card" style="border-color:rgba(245,158,11,.25);padding:36px;text-align:center">
-      <div style="font-size:11px;font-weight:700;letter-spacing:.15em;color:#9ca3af;text-transform:uppercase;margin-bottom:16px">Single Sport</div>
-      <div style="font-size:64px;font-weight:900;color:#fff;line-height:1;font-family:'Playfair Display',serif">$20</div>
-      <div style="color:#6b7280;font-size:13px;margin-bottom:28px">per month</div>
-      <div style="text-align:left;margin-bottom:28px;display:flex;flex-direction:column;gap:10px">
-        <div style="color:#9ca3af;font-size:13px">&#10003; &nbsp;Access to 1 sport of your choice</div>
-        <div style="color:#9ca3af;font-size:13px">&#10003; &nbsp;Daily picks updated at 10 AM ET</div>
-        <div style="color:#9ca3af;font-size:13px">&#10003; &nbsp;Real sportsbook lines included</div>
-        <div style="color:#9ca3af;font-size:13px">&#10003; &nbsp;Cancel anytime</div>
-      </div>
-      <a href="/subscribe/single" class="btn" style="display:block;width:100%;text-align:center;font-size:14px">Get Started</a>
-    </div>
-    <div class="card" style="border-color:rgba(245,158,11,.5);padding:36px;text-align:center;position:relative">
-      <div style="position:absolute;top:-14px;left:50%;transform:translateX(-50%);background:#f59e0b;color:#000;font-size:10px;font-weight:900;letter-spacing:.15em;padding:4px 16px;border-radius:999px;white-space:nowrap">MOST POPULAR</div>
-      <div style="font-size:11px;font-weight:700;letter-spacing:.15em;color:#f59e0b;text-transform:uppercase;margin-bottom:16px">All Sports</div>
-      <div style="font-size:64px;font-weight:900;color:#fff;line-height:1;font-family:'Playfair Display',serif">$50</div>
-      <div style="color:#6b7280;font-size:13px;margin-bottom:28px">per month</div>
-      <div style="text-align:left;margin-bottom:28px;display:flex;flex-direction:column;gap:10px">
-        <div style="display:flex;align-items:center;gap:8px;color:#d1d5db;font-size:13px"><span style="background:#1d4ed8;border-radius:3px;padding:1px 6px;font-size:9px;font-weight:700;color:#fff">MLB</span> MoneyBall</div>
-        <div style="display:flex;align-items:center;gap:8px;color:#d1d5db;font-size:13px"><span style="background:#15803d;border-radius:3px;padding:1px 6px;font-size:9px;font-weight:700;color:#fff">NHL</span> Money Shots</div>
-        <div style="display:flex;align-items:center;gap:8px;color:#d1d5db;font-size:13px"><span style="background:#7e22ce;border-radius:3px;padding:1px 6px;font-size:9px;font-weight:700;color:#fff">NBA</span> Money Buckets</div>
-        <div style="display:flex;align-items:center;gap:8px;color:#d1d5db;font-size:13px"><span style="background:#b45309;border-radius:3px;padding:1px 6px;font-size:9px;font-weight:700;color:#fff">NFL</span> Money Bombs</div>
-        <div style="height:1px;background:#262626;margin:2px 0"></div>
-        <div style="color:#9ca3af;font-size:13px">&#10003; &nbsp;Real sportsbook lines included</div>
-        <div style="color:#9ca3af;font-size:13px">&#10003; &nbsp;Cancel anytime</div>
-      </div>
-      <a href="/subscribe" class="btn btn-lg" style="display:block;width:100%;text-align:center;box-shadow:0 0 30px rgba(245,158,11,.3);font-size:15px">Subscribe Now</a>
-    </div>
-    <div class="card" style="border-color:rgba(245,158,11,.25);padding:36px;text-align:center">
-      <div style="font-size:11px;font-weight:700;letter-spacing:.15em;color:#9ca3af;text-transform:uppercase;margin-bottom:16px">Yearly Pass</div>
-      <div style="font-size:64px;font-weight:900;color:#fff;line-height:1;font-family:'Playfair Display',serif">$500</div>
-      <div style="color:#6b7280;font-size:13px;margin-bottom:8px">per year</div>
-      <div style="background:rgba(74,222,128,.08);border:1px solid rgba(74,222,128,.2);color:#4ade80;border-radius:6px;padding:4px 12px;font-size:11px;font-weight:700;display:inline-block;margin-bottom:20px">Save $100 vs monthly</div>
-      <div style="text-align:left;margin-bottom:28px;display:flex;flex-direction:column;gap:10px">
-        <div style="color:#9ca3af;font-size:13px">&#10003; &nbsp;All 4 sports included</div>
-        <div style="color:#9ca3af;font-size:13px">&#10003; &nbsp;Daily picks at 10 AM ET</div>
-        <div style="color:#9ca3af;font-size:13px">&#10003; &nbsp;Real sportsbook lines included</div>
-        <div style="color:#9ca3af;font-size:13px">&#10003; &nbsp;Best value &mdash; 2 months free</div>
-      </div>
-      <a href="/subscribe/yearly" class="btn" style="display:block;width:100%;text-align:center;font-size:14px">Get Annual Pass</a>
-    </div>
-  </div>
-  <p style="text-align:center;margin-top:32px;color:#374151;font-size:11px;line-height:1.8;padding:0 24px">
-    Already a member? <a href="/login" style="color:#f59e0b;text-decoration:none">Login here</a>
-    &nbsp;&middot;&nbsp; For entertainment only. Must be 18+. Please gamble responsibly.
-  </p>
-</div>
-"""
-
 LOGIN_HTML = BASE_STYLE + """
 <nav>
   <div class="logo">Money <span>Picks</span> Arena</div>
   <div class="nav-links">
-    <a href="/pricing" class="btn">View Plans</a>
+    <a href="/subscribe" class="btn">Subscribe — $50/mo</a>
   </div>
 </nav>
 <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;padding-top:100px">
@@ -302,28 +243,28 @@ DASHBOARD_HTML = BASE_STYLE + """
       <span style="font-size:10px;font-weight:700;letter-spacing:.1em;background:#1d4ed8;color:#fff;padding:3px 10px;border-radius:4px">BASEBALL</span>
       <h3 class="font-display" style="font-size:20px">MLB MoneyBall</h3>
       <p style="color:#6b7280;font-size:12px;line-height:1.6">Career stats vs pitcher, H/A splits, hot streaks. Top 9 picks daily.</p>
-      <a href="/open/mlb" class="btn" style="width:100%;text-align:center">🎯 OPEN PICKS</a>
+      <a href="https://moneyball-1.onrender.com" target="_blank" class="btn" style="width:100%;text-align:center">🎯 OPEN PICKS</a>
     </div>
     <div class="card" style="text-align:center;display:flex;flex-direction:column;gap:14px;align-items:center">
       <div style="font-size:52px">🏒</div>
       <span style="font-size:10px;font-weight:700;letter-spacing:.1em;background:#15803d;color:#fff;padding:3px 10px;border-radius:4px">HOCKEY</span>
       <h3 class="font-display" style="font-size:20px">NHL Money Shots</h3>
       <p style="color:#6b7280;font-size:12px;line-height:1.6">Shots on goal picks with live FanDuel sportsbook lines.</p>
-      <a href="/open/nhl" class="btn" style="width:100%;text-align:center">🎯 OPEN PICKS</a>
+      <a href="https://nhl-shots.onrender.com" target="_blank" class="btn" style="width:100%;text-align:center">🎯 OPEN PICKS</a>
     </div>
     <div class="card" style="text-align:center;display:flex;flex-direction:column;gap:14px;align-items:center">
       <div style="font-size:52px">🏀</div>
       <span style="font-size:10px;font-weight:700;letter-spacing:.1em;background:#7e22ce;color:#fff;padding:3px 10px;border-radius:4px">BASKETBALL</span>
       <h3 class="font-display" style="font-size:20px">NBA Money Buckets</h3>
       <p style="color:#6b7280;font-size:12px;line-height:1.6">75%+ hit rate picks for Pts, Reb, Ast, 3PM vs today's opponent.</p>
-      <a href="/open/nba" class="btn" style="width:100%;text-align:center">🎯 OPEN PICKS</a>
+      <a href="https://nba-money-buckets.onrender.com" target="_blank" class="btn" style="width:100%;text-align:center">🎯 OPEN PICKS</a>
     </div>
     <div class="card" style="text-align:center;display:flex;flex-direction:column;gap:14px;align-items:center">
       <div style="font-size:52px">🏈</div>
       <span style="font-size:10px;font-weight:700;letter-spacing:.1em;background:#b45309;color:#fff;padding:3px 10px;border-radius:4px">FOOTBALL</span>
       <h3 class="font-display" style="font-size:20px">NFL Money Bombs</h3>
       <p style="color:#6b7280;font-size:12px;line-height:1.6">Weekly NFL player prop picks with matchup analysis.</p>
-      <a href="/open/nfl" class="btn" style="width:100%;text-align:center">🎯 OPEN PICKS</a>
+      <a href="https://nfl-money-bombs.onrender.com" target="_blank" class="btn" style="width:100%;text-align:center">🎯 OPEN PICKS</a>
     </div>
   </div>
 </div>
@@ -336,48 +277,6 @@ async def home():
     return HOME_HTML
 
 # ── Stripe Checkout ────────────────────────────────────────────────────────────
-@app.get("/open/{app_name}")
-async def open_app(app_name: str, request: Request):
-    sid = request.cookies.get("sid")
-    email = SESSIONS.get(sid, "") if sid else ""
-    if not email:
-        return RedirectResponse("/login")
-    url = APP_URLS.get(app_name.lower())
-    if not url:
-        return RedirectResponse("/dashboard")
-    token = make_app_token(email)
-    return RedirectResponse(f"{url}?token={token}")
-
-@app.get("/pricing", response_class=HTMLResponse)
-async def pricing():
-    return PRICING_HTML
-
-@app.get("/subscribe/single")
-async def subscribe_single():
-    try:
-        session = stripe.checkout.sessions.create(
-            payment_method_types=["card"], mode="subscription",
-            line_items=[{"price": STRIPE_PRICE_ID_SINGLE, "quantity": 1}],
-            success_url=f"{SITE_URL}/register?session_id={{CHECKOUT_SESSION_ID}}",
-            cancel_url=f"{SITE_URL}/pricing",
-        )
-        return RedirectResponse(url=session.url)
-    except Exception as e:
-        return HTMLResponse(f"<p style='color:red;font-family:sans-serif;padding:40px'>Stripe error: {e}<br><a href='/pricing'>Go back</a></p>")
-
-@app.get("/subscribe/yearly")
-async def subscribe_yearly():
-    try:
-        session = stripe.checkout.sessions.create(
-            payment_method_types=["card"], mode="subscription",
-            line_items=[{"price": STRIPE_PRICE_ID_YEARLY, "quantity": 1}],
-            success_url=f"{SITE_URL}/register?session_id={{CHECKOUT_SESSION_ID}}",
-            cancel_url=f"{SITE_URL}/pricing",
-        )
-        return RedirectResponse(url=session.url)
-    except Exception as e:
-        return HTMLResponse(f"<p style='color:red;font-family:sans-serif;padding:40px'>Stripe error: {e}<br><a href='/pricing'>Go back</a></p>")
-
 @app.get("/subscribe")
 async def subscribe():
     try:
