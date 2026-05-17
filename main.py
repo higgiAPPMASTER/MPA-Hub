@@ -15,6 +15,7 @@ STRIPE_PRICE_ID_SINGLE = os.environ.get("STRIPE_PRICE_ID_SINGLE", "") # $20/mo s
 STRIPE_PRICE_ID_YEARLY = os.environ.get("STRIPE_PRICE_ID_YEARLY", "") # $500/yr all sports
 STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
 SITE_URL          = os.environ.get("SITE_URL", "http://localhost:8000")
+JWT_SECRET        = os.environ.get("JWT_SECRET", "")
 SECRET_KEY        = os.environ.get("SECRET_KEY", secrets.token_hex(32))
 
 stripe.api_key = STRIPE_SECRET
@@ -28,11 +29,12 @@ APP_URLS = {
 }
 
 def make_app_token(email: str) -> str:
-    """Generate a JWT for app access using Hub's SECRET_KEY."""
+    """Generate a JWT for app access — uses JWT_SECRET (same on all apps)."""
     from jose import jwt as _jwt
     from datetime import datetime, timedelta
+    key = JWT_SECRET or SECRET_KEY  # JWT_SECRET preferred
     payload = {"sub": email, "exp": datetime.utcnow() + timedelta(hours=24)}
-    return _jwt.encode(payload, SECRET_KEY, algorithm="HS256")
+    return _jwt.encode(payload, key, algorithm="HS256")
 db = create_client(SUPABASE_URL, SUPABASE_KEY) if SUPABASE_URL and SUPABASE_KEY else None
 
 ADMIN_EMAIL    = os.environ.get("ADMIN_EMAIL", "")
