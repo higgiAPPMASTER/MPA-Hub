@@ -44,11 +44,15 @@ BASE_STYLE = """
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700;900&family=Source+Sans+Pro:wght@300;400;600;700&display=swap');
 *{margin:0;padding:0;box-sizing:border-box}
-body{background:#0f0f0f;color:#fff;font-family:'Source Sans Pro',sans-serif;min-height:100vh}
+body{background:#0a0a0a;color:#fff;font-family:'Source Sans Pro',sans-serif;min-height:100vh}
 .font-display{font-family:'Playfair Display',serif}
-nav{position:fixed;top:0;width:100%;background:rgba(10,10,10,.95);backdrop-filter:blur(12px);border-bottom:1px solid #1c1c1c;z-index:100;padding:0 32px;height:80px;display:flex;align-items:center;justify-content:space-between}
-.logo{font-family:'Playfair Display',serif;font-size:42px;font-weight:900;color:#f59e0b;letter-spacing:.02em;line-height:1}
-.logo span{color:#fff}
+nav{position:fixed;top:0;width:100%;background:rgba(10,10,10,.9);backdrop-filter:blur(12px);border-bottom:1px solid #1c1c1c;z-index:100;padding:0 24px;height:80px;display:flex;align-items:center;justify-content:space-between}
+.brand{display:flex;align-items:center;gap:12px;text-decoration:none}
+.brand img{height:48px;width:48px;object-fit:contain;mix-blend-mode:lighten}
+.brand-text{font-family:'Playfair Display',serif;font-size:24px;font-weight:700;letter-spacing:.01em;line-height:1}
+.brand-text .m,.brand-text .a{color:#fff}
+.brand-text .p{color:#f59e0b}
+@media(max-width:640px){.brand-text{display:none}}
 .nav-links{display:flex;align-items:center;gap:20px}
 .nav-link{color:#9ca3af;font-size:13px;text-decoration:none;font-weight:600;transition:color .2s}
 .nav-link:hover{color:#fff}
@@ -72,10 +76,13 @@ footer{border-top:1px solid #1a1a1a;padding:28px 32px;text-align:center;color:#3
 
 HOME_HTML = BASE_STYLE + """
 <nav>
-  <div class="logo">Money <span>Picks</span> Arena</div>
+  <a href="/" class="brand">
+    <img src="https://moneypicksarena.com/logo.png" alt="Money Picks Arena"/>
+    <span class="brand-text"><span class="m">Money </span><span class="p">Picks </span><span class="a">Arena</span></span>
+  </a>
   <div class="nav-links">
-    <a href="/login" class="nav-link">Member Login</a>
-    <a href="/pricing" class="btn">View Plans</a>
+    <a href="/login" class="nav-link">Login</a>
+    <a href="/pricing" class="btn">Plans</a>
   </div>
 </nav>
 
@@ -150,10 +157,13 @@ HOME_HTML = BASE_STYLE + """
 
 PRICING_HTML = BASE_STYLE + """
 <nav>
-  <div class="logo">Money <span>Picks</span> Arena</div>
+  <a href="/" class="brand">
+    <img src="https://moneypicksarena.com/logo.png" alt="Money Picks Arena"/>
+    <span class="brand-text"><span class="m">Money </span><span class="p">Picks </span><span class="a">Arena</span></span>
+  </a>
   <div class="nav-links">
-    <a href="/" class="nav-link">Home</a>
-    <a href="/login" class="nav-link">Member Login</a>
+    <a href="/login" class="nav-link">Login</a>
+    <a href="/" class="btn">Home</a>
   </div>
 </nav>
 <div style="padding-top:100px;padding-bottom:60px;min-height:100vh">
@@ -213,9 +223,12 @@ PRICING_HTML = BASE_STYLE + """
 
 LOGIN_HTML = BASE_STYLE + """
 <nav>
-  <div class="logo">Money <span>Picks</span> Arena</div>
+  <a href="/" class="brand">
+    <img src="https://moneypicksarena.com/logo.png" alt="Money Picks Arena"/>
+    <span class="brand-text"><span class="m">Money </span><span class="p">Picks </span><span class="a">Arena</span></span>
+  </a>
   <div class="nav-links">
-    <a href="/pricing" class="btn">View Plans</a>
+    <a href="/pricing" class="btn">Plans</a>
   </div>
 </nav>
 <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;padding-top:100px">
@@ -245,7 +258,10 @@ LOGIN_HTML = BASE_STYLE + """
 
 REGISTER_HTML = BASE_STYLE + """
 <nav>
-  <div class="logo">Money <span>Picks</span> Arena</div>
+  <a href="/" class="brand">
+    <img src="https://moneypicksarena.com/logo.png" alt="Money Picks Arena"/>
+    <span class="brand-text"><span class="m">Money </span><span class="p">Picks </span><span class="a">Arena</span></span>
+  </a>
 </nav>
 <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;padding-top:100px">
   <div style="width:100%;max-width:420px">
@@ -273,10 +289,13 @@ REGISTER_HTML = BASE_STYLE + """
 
 DASHBOARD_HTML = BASE_STYLE + """
 <nav>
-  <div class="logo">Money <span>Picks</span> Arena</div>
+  <a href="/dashboard" class="brand">
+    <img src="https://moneypicksarena.com/logo.png" alt="Money Picks Arena"/>
+    <span class="brand-text"><span class="m">Money </span><span class="p">Picks </span><span class="a">Arena</span></span>
+  </a>
   <div class="nav-links">
-    <span style="color:#4b5563;font-size:12px">{email}</span>
-    <span style="background:rgba(74,222,128,.08);border:1px solid rgba(74,222,128,.2);color:#4ade80;font-size:11px;font-weight:700;padding:4px 12px;border-radius:999px">✓ ACTIVE</span>
+    <span style="color:#4b5563;font-size:12px" class="hide-sm">{email}</span>
+    <span style="background:rgba(74,222,128,.08);border:1px solid rgba(74,222,128,.2);color:#4ade80;font-size:11px;font-weight:700;padding:4px 12px;border-radius:999px;white-space:nowrap">✓ ACTIVE</span>
     <a href="/admin" style="color:#f59e0b;font-size:12px;font-weight:700;text-decoration:none" class="nav-link">⚙️ Admin</a>
     <a href="/logout" class="nav-link">Logout</a>
   </div>
