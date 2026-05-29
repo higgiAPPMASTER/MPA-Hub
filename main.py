@@ -516,7 +516,9 @@ async def logout(request: Request):
     sid = request.cookies.get("sid")
     if sid and sid in SESSIONS:
         del SESSIONS[sid]
-    resp = RedirectResponse(url="/")
+    # Send users to the branded landing page (custom domain) to log in again,
+    # not the raw onrender.com URL.
+    resp = RedirectResponse(url="https://www.moneypicksarena.com")
     resp.delete_cookie("sid")
     return resp
 
