@@ -312,28 +312,32 @@ DASHBOARD_HTML = BASE_STYLE + """
       <div style="font-size:52px">⚾</div>
       <span style="font-size:10px;font-weight:700;letter-spacing:.1em;background:#1d4ed8;color:#fff;padding:3px 10px;border-radius:4px">BASEBALL</span>
       <h3 class="font-display" style="font-size:20px">MLB MoneyBall</h3>
-      <a href="https://moneyball-1.onrender.com" target="_blank" class="btn" style="width:100%;text-align:center;margin-top:auto">🎯 OPEN PICKS</a>
+        <a href="#" onclick="openApp('https://moneyball-1.onrender.com');return false;" class="btn" style="width:100%;text-align:center;margin-top:auto">🎯 OPEN PICKS</a>
     </div>
     <div class="card" style="text-align:center;display:flex;flex-direction:column;gap:14px;align-items:center">
       <div style="font-size:52px">🏒</div>
       <span style="font-size:10px;font-weight:700;letter-spacing:.1em;background:#15803d;color:#fff;padding:3px 10px;border-radius:4px">HOCKEY</span>
       <h3 class="font-display" style="font-size:20px">NHL Money Shots</h3>
-      <a href="https://nhl-shots.onrender.com" target="_blank" class="btn" style="width:100%;text-align:center;margin-top:auto">🎯 OPEN PICKS</a>
+      <a href="#" onclick="openApp('https://nhl-shots.onrender.com');return false;" class="btn" style="width:100%;text-align:center;margin-top:auto">🎯 OPEN PICKS</a>
     </div>
     <div class="card" style="text-align:center;display:flex;flex-direction:column;gap:14px;align-items:center">
       <div style="font-size:52px">🏀</div>
       <span style="font-size:10px;font-weight:700;letter-spacing:.1em;background:#7e22ce;color:#fff;padding:3px 10px;border-radius:4px">BASKETBALL</span>
       <h3 class="font-display" style="font-size:20px">NBA Money Buckets</h3>
-      <a href="https://nba-money-buckets.onrender.com" target="_blank" class="btn" style="width:100%;text-align:center;margin-top:auto">🎯 OPEN PICKS</a>
+      <a href="#" onclick="openApp('https://nba-money-buckets.onrender.com');return false;" class="btn" style="width:100%;text-align:center;margin-top:auto">🎯 OPEN PICKS</a>
     </div>
     <div class="card" style="text-align:center;display:flex;flex-direction:column;gap:14px;align-items:center">
       <div style="font-size:52px">🏈</div>
       <span style="font-size:10px;font-weight:700;letter-spacing:.1em;background:#b45309;color:#fff;padding:3px 10px;border-radius:4px">FOOTBALL</span>
       <h3 class="font-display" style="font-size:20px">NFL Money Bombs</h3>
-      <a href="https://nfl-money-bombs.onrender.com" target="_blank" class="btn" style="width:100%;text-align:center;margin-top:auto">🎯 OPEN PICKS</a>
+      <a href="#" onclick="openApp('https://nfl-money-bombs.onrender.com');return false;" class="btn" style="width:100%;text-align:center;margin-top:auto">🎯 OPEN PICKS</a>
     </div>
   </div>
 </div>
+<script>
+var _hubTok='__HUB_TOKEN__';
+function openApp(url){window.open(url+'?token='+encodeURIComponent(_hubTok),'_blank');}
+</script>
 """
 
 # ── Routes ─────────────────────────────────────────────────────────────────────
@@ -504,7 +508,7 @@ async def dashboard(request: Request):
     user = get_user(request)
     if not user:
         return RedirectResponse(url="/login")
-    return DASHBOARD_HTML.replace("{email}", user)
+    return DASHBOARD_HTML.replace("{email}", user).replace("__HUB_TOKEN__", make_app_token(user))
 
 # ── Logout ─────────────────────────────────────────────────────────────────────
 @app.get("/logout")
