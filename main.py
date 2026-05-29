@@ -517,8 +517,9 @@ async def logout(request: Request):
     if sid and sid in SESSIONS:
         del SESSIONS[sid]
     # Send users to the branded landing page (custom domain) to log in again,
-    # not the raw onrender.com URL.
-    resp = RedirectResponse(url="https://www.moneypicksarena.com")
+    # not the raw onrender.com URL. NOTE: the apex domain (no "www") is the one
+    # that resolves; the "www." subdomain is not configured.
+    resp = RedirectResponse(url="https://moneypicksarena.com")
     resp.delete_cookie("sid")
     return resp
 
