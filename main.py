@@ -365,7 +365,7 @@ DASHBOARD_HTML = BASE_STYLE + """
   <div class="nav-links">
     <span style="color:#4b5563;font-size:12px" class="hide-sm">{email}</span>
     <span style="background:rgba(74,222,128,.08);border:1px solid rgba(74,222,128,.2);color:#4ade80;font-size:11px;font-weight:700;padding:4px 12px;border-radius:999px;white-space:nowrap">✓ ACTIVE</span>
-    <a href="/admin" style="color:#f59e0b;font-size:12px;font-weight:700;text-decoration:none" class="nav-link">⚙️ Admin</a>
+    {admin_link}
     <a href="/logout" class="nav-link">Logout</a>
   </div>
 </nav>
@@ -663,7 +663,14 @@ async def dashboard(request: Request):
     user = get_user(request)
     if not user:
         return RedirectResponse(url="/login")
-    return DASHBOARD_HTML.replace("{email}", user).replace("__HUB_TOKEN__", make_app_token(user))
+    # Only the admin sees the ⚙️ Admin link. Regular members get an empty string here
+    # (the /admin route is still server-side protected by is_admin regardless).
+    admin_link = ('<a href="/admin" style="color:#f59e0b;font-size:12px;font-weight:700;'
+                  'text-decoration:none" class="nav-link">⚙️ Admin</a>') if is_admin(request) else ""
+    return (DASHBOARD_HTML
+            .replace("{admin_link}", admin_link)
+            .replace("{email}", user)
+            .replace("__HUB_TOKEN__", make_app_token(user)))
 
 # ── Logout ─────────────────────────────────────────────────────────────────────
 @app.get("/logout")
