@@ -39,6 +39,38 @@ def get_user(request: Request) -> str:
     sid = request.cookies.get("sid")
     return SESSIONS.get(sid, "") if sid else ""
 
+def _norm_email(e: str) -> str:
+    return (e or "").strip().lower()
+
+def _find_subscriber(email: str):
+    """Case-insensitive lookup of a subscriber row by email."""
+    if not db:
+        return None
+    try:
+        res = db.table("subscribers").select("*").ilike("email", _norm_email(email)).execute()
+        return res.data[0] if res.data else None
+    except Exception:
+        return None
+
+def _find_stripe_active(email: str):
+    """(customer_id, subscription_id) for an active Stripe sub for this email, else ('','')."""
+    email = _norm_email(email)
+    if not email or not STRIPE_SECRET:
+        return ("", "")
+    try:
+        custs = stripe.Customer.list(email=email, limit=20)
+    except Exception:
+        return ("", "")
+    for c in custs.data:
+        try:
+            subs = stripe.Subscription.list(customer=c.id, status="all", limit=20)
+        except Exception:
+            continue
+        for s in subs.data:
+            if getattr(s, "status", "") in ("active", "trialing", "past_due"):
+                return (c.id, s.id)
+    return ("", "")
+
 # ── HTML ───────────────────────────────────────────────────────────────────────
 BASE_STYLE = """
 <style>
@@ -250,6 +282,9 @@ LOGIN_HTML = BASE_STYLE + """
       <p style="text-align:center;margin-top:18px;font-size:13px;color:#4b5563">
         Not a member? <a href="/subscribe" style="color:#f59e0b;text-decoration:none">Subscribe for $50/mo</a>
       </p>
+      <p style="text-align:center;margin-top:8px;font-size:13px;color:#4b5563">
+        Paid but can't log in? <a href="/setup" style="color:#f59e0b;text-decoration:none">Set your password</a>
+      </p>
     </div>
     <p style="text-align:center;margin-top:16px"><a href="/" style="color:#374151;font-size:12px;text-decoration:none">← Back to home</a></p>
   </div>
@@ -282,6 +317,40 @@ REGISTER_HTML = BASE_STYLE + """
         <input type="password" name="confirm" placeholder="Repeat your password" required minlength="6" autocomplete="new-password"/>
         <button type="submit" class="btn" style="font-size:16px;padding:14px">CREATE ACCOUNT &amp; LOGIN →</button>
       </form>
+    </div>
+  </div>
+</div>
+"""
+
+SETUP_HTML = BASE_STYLE + """
+<nav>
+  <a href="/" class="brand">
+    <img src="https://moneypicksarena.com/logo.png" alt="Money Picks Arena"/>
+    <span class="brand-text"><span class="m">Money </span><span class="p">Picks </span><span class="a">Arena</span></span>
+  </a>
+  <div class="nav-links"><a href="/login" class="nav-link">Login</a></div>
+</nav>
+<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;padding-top:100px">
+  <div style="width:100%;max-width:420px">
+    <div style="text-align:center;margin-bottom:28px">
+      <div class="font-display gold" style="font-size:22px;margin-bottom:4px">Money Picks Arena</div>
+      <h1 style="font-size:26px;font-weight:900;margin-bottom:4px">Set Your Password</h1>
+      <p style="color:#6b7280;font-size:13px">Already paid but never set a password? Set it here using the email you used at checkout.</p>
+    </div>
+    <div class="card">
+      {error}
+      <form method="post" action="/setup">
+        <label>Email Address</label>
+        <input type="email" name="email" value="{email}" placeholder="you@example.com" required autocomplete="email"/>
+        <label>Create a Password</label>
+        <input type="password" name="password" placeholder="Choose a strong password (min 6 chars)" required minlength="6" autocomplete="new-password"/>
+        <label>Confirm Password</label>
+        <input type="password" name="confirm" placeholder="Repeat your password" required minlength="6" autocomplete="new-password"/>
+        <button type="submit" class="btn" style="font-size:16px;padding:14px">SET PASSWORD &amp; LOGIN →</button>
+      </form>
+      <p style="text-align:center;margin-top:18px;font-size:13px;color:#4b5563">
+        Already have a password? <a href="/login" style="color:#f59e0b;text-decoration:none">Login here</a>
+      </p>
     </div>
   </div>
 </div>
@@ -423,29 +492,112 @@ async def register_post(
         return REGISTER_HTML.replace("{email}", email).replace("{session_id}", session_id).replace(
             "{error}", '<div class="error-box">❌ Password must be at least 6 characters.</div>')
 
-    # Check if account already exists
-    existing = db.table("subscribers").select("id").eq("email", email).execute()
-    if existing.data:
+    # Verify the email matches the Stripe checkout session (ownership proof:
+    # only the person who completed checkout has this session_id).
+    try:
+        session = stripe.checkout.sessions.retrieve(session_id)
+        sess_email = _norm_email((session.customer_details.email if session.customer_details else "") or "")
+        customer_id = session.customer or ""
+        subscription_id = session.subscription or ""
+    except Exception:
+        sess_email = ""
+        customer_id = ""
+        subscription_id = ""
+    if not sess_email or _norm_email(email) != sess_email:
+        return REGISTER_HTML.replace("{email}", email).replace("{session_id}", session_id).replace(
+            "{error}", '<div class="error-box">❌ This email does not match your payment. Use the email you checked out with.</div>')
+    email = sess_email
+
+    # Account may already exist (e.g. created by the Stripe webhook). Be idempotent.
+    existing = _find_subscriber(email)
+    if existing and existing.get("password_hash"):
         return REGISTER_HTML.replace("{email}", email).replace("{session_id}", session_id).replace(
             "{error}", '<div class="error-box">❌ An account with this email already exists. <a href="/login" style="color:#f59e0b">Login here.</a></div>')
 
-    # Get Stripe details
-    try:
-        session = stripe.checkout.sessions.retrieve(session_id)
-        customer_id = session.customer
-        subscription_id = session.subscription
-    except:
-        customer_id = ""
-        subscription_id = ""
+    if existing:
+        # Row exists without a password yet — set it and activate.
+        db.table("subscribers").update({
+            "password_hash": hash_pw(password),
+            "stripe_customer_id": customer_id or existing.get("stripe_customer_id") or "",
+            "stripe_subscription_id": subscription_id or existing.get("stripe_subscription_id") or "",
+            "is_active": True
+        }).eq("email", existing["email"]).execute()
+    else:
+        try:
+            db.table("subscribers").insert({
+                "email": email,
+                "password_hash": hash_pw(password),
+                "stripe_customer_id": customer_id,
+                "stripe_subscription_id": subscription_id,
+                "is_active": True
+            }).execute()
+        except Exception:
+            # Race: webhook created the row a moment ago — update it instead.
+            db.table("subscribers").update({
+                "password_hash": hash_pw(password),
+                "stripe_customer_id": customer_id,
+                "stripe_subscription_id": subscription_id,
+                "is_active": True
+            }).eq("email", email).execute()
 
-    # Create account in Supabase
-    db.table("subscribers").insert({
-        "email": email,
-        "password_hash": hash_pw(password),
-        "stripe_customer_id": customer_id,
-        "stripe_subscription_id": subscription_id,
-        "is_active": True
-    }).execute()
+    # Auto-login
+    sid = secrets.token_hex(32)
+    SESSIONS[sid] = email
+    resp = RedirectResponse(url="/dashboard", status_code=302)
+    resp.set_cookie("sid", sid, httponly=True, samesite="lax", max_age=60 * 60 * 24 * 30)
+    return resp
+
+# ── Set / recover password (paid but no password yet) ─────────────────────────
+@app.get("/setup", response_class=HTMLResponse)
+async def setup_get(email: str = ""):
+    return SETUP_HTML.replace("{email}", email).replace("{error}", "")
+
+@app.post("/setup", response_class=HTMLResponse)
+async def setup_post(
+    email: str = Form(...),
+    password: str = Form(...),
+    confirm: str = Form(...)
+):
+    email = _norm_email(email)
+    if password != confirm:
+        return SETUP_HTML.replace("{email}", email).replace(
+            "{error}", '<div class="error-box">❌ Passwords do not match.</div>')
+    if len(password) < 6:
+        return SETUP_HTML.replace("{email}", email).replace(
+            "{error}", '<div class="error-box">❌ Password must be at least 6 characters.</div>')
+
+    user = _find_subscriber(email)
+
+    if user and user.get("password_hash"):
+        return SETUP_HTML.replace("{email}", email).replace(
+            "{error}", '<div class="error-box">❌ This account already has a password. <a href="/login" style="color:#f59e0b">Login here.</a></div>')
+
+    if user:
+        # Paid account exists without a password — set it.
+        db.table("subscribers").update({
+            "password_hash": hash_pw(password),
+            "is_active": True
+        }).eq("email", user["email"]).execute()
+    else:
+        # No row yet — verify they actually paid via Stripe before creating one.
+        customer_id, subscription_id = _find_stripe_active(email)
+        if not customer_id:
+            return SETUP_HTML.replace("{email}", email).replace(
+                "{error}", '<div class="error-box">❌ No active subscription found for this email. <a href="/subscribe" style="color:#f59e0b">Subscribe here.</a></div>')
+        try:
+            db.table("subscribers").insert({
+                "email": email,
+                "password_hash": hash_pw(password),
+                "stripe_customer_id": customer_id,
+                "stripe_subscription_id": subscription_id,
+                "is_active": True
+            }).execute()
+        except Exception:
+            # Race: row created concurrently — update it instead.
+            db.table("subscribers").update({
+                "password_hash": hash_pw(password),
+                "is_active": True
+            }).eq("email", email).execute()
 
     # Auto-login
     sid = secrets.token_hex(32)
@@ -469,11 +621,14 @@ async def login_post(request: Request, email: str = Form(...), password: str = F
         resp.set_cookie("sid", sid, httponly=True, samesite="lax", max_age=60 * 60 * 24 * 365)  # 1 year
         return resp
 
-    result = db.table("subscribers").select("*").eq("email", email).execute()
-    if not result.data:
-        return LOGIN_HTML.replace("{error}", '<div class="error-box">❌ Email not found. <a href="/subscribe" style="color:#f59e0b">Subscribe here.</a></div>')
+    user = _find_subscriber(email)
+    if not user:
+        return LOGIN_HTML.replace("{error}", '<div class="error-box">❌ Email not found. <a href="/setup" style="color:#f59e0b">Set your password</a> if you already paid, or <a href="/subscribe" style="color:#f59e0b">subscribe here.</a></div>')
 
-    user = result.data[0]
+    email = user["email"]
+    if not user.get("password_hash"):
+        return LOGIN_HTML.replace("{error}", '<div class="error-box">❌ You have not set a password yet. <a href="/setup" style="color:#f59e0b">Set it here.</a></div>')
+
     if user["password_hash"] != hash_pw(password):
         return LOGIN_HTML.replace("{error}", '<div class="error-box">❌ Incorrect password.</div>')
 
@@ -727,7 +882,30 @@ async def webhook(request: Request):
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=400)
 
-    if event["type"] == "customer.subscription.updated":
+    if event["type"] == "checkout.session.completed":
+        sess = event["data"]["object"]
+        details = sess.get("customer_details") or {}
+        email = _norm_email(details.get("email") or sess.get("customer_email") or "")
+        customer_id = sess.get("customer") or ""
+        subscription_id = sess.get("subscription") or ""
+        if email and db:
+            existing = _find_subscriber(email)
+            if existing:
+                db.table("subscribers").update({
+                    "stripe_customer_id": customer_id or existing.get("stripe_customer_id") or "",
+                    "stripe_subscription_id": subscription_id or existing.get("stripe_subscription_id") or "",
+                    "is_active": True
+                }).eq("email", existing["email"]).execute()
+            else:
+                db.table("subscribers").insert({
+                    "email": email,
+                    "password_hash": "",
+                    "stripe_customer_id": customer_id,
+                    "stripe_subscription_id": subscription_id,
+                    "is_active": True
+                }).execute()
+
+    elif event["type"] == "customer.subscription.updated":
         sub = event["data"]["object"]
         is_active = sub["status"] == "active"
         db.table("subscribers").update({"is_active": is_active}).eq("stripe_subscription_id", sub["id"]).execute()
