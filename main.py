@@ -280,7 +280,7 @@ LOGIN_HTML = BASE_STYLE + """
         <button type="submit" class="btn" style="font-size:16px;padding:14px">LOGIN →</button>
       </form>
       <p style="text-align:center;margin-top:18px;font-size:13px;color:#4b5563">
-        Not a member? <a href="/subscribe" style="color:#f59e0b;text-decoration:none">Subscribe for $50/mo</a>
+        Not a member? <a href="/pricing" style="color:#f59e0b;text-decoration:none">View our Plans</a>
       </p>
       <p style="text-align:center;margin-top:8px;font-size:13px;color:#4b5563">
         Paid but can't log in? <a href="/setup" style="color:#f59e0b;text-decoration:none">Set your password</a>
