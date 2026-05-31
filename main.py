@@ -73,8 +73,14 @@ def _find_stripe_active(email: str):
 
 # ── HTML ───────────────────────────────────────────────────────────────────────
 BASE_STYLE = """
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700;900&family=Source+Sans+Pro:wght@300;400;600;700&display=swap');
+/* responsive: phones & tablets (mobile fit) */
+html,body{max-width:100%;overflow-x:hidden}
+img{max-width:100%;height:auto}
+@media (max-width:1200px){table{display:block;width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch;white-space:nowrap}}
+@media (max-width:560px){table{font-size:12px}table th,table td{padding:6px 8px}}
 *{margin:0;padding:0;box-sizing:border-box}
 body{background:#0a0a0a;color:#fff;font-family:'Source Sans Pro',sans-serif;min-height:100vh}
 .font-display{font-family:'Playfair Display',serif}
@@ -754,6 +760,7 @@ async def admin_dashboard(request: Request):
     suspicious_count = sum(1 for s in subs if "⚠️" in (s.get("notes","") or ""))
 
     html = f"""<!DOCTYPE html><html><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>MPA Admin</title>
 <style>
   body{{background:#0a0a0a;color:#e5e7eb;font-family:'Segoe UI',sans-serif;padding:32px}}
