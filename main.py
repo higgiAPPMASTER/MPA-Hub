@@ -648,11 +648,13 @@ PARLAY_HTML = BASE_STYLE + """
     <span class="brand-text"><span class="m">Money </span><span class="p">Picks </span><span class="a">Arena</span></span>
   </a>
   <div class="nav-links">
+    <a href="/dashboard" class="nav-link">&#8592; Dashboard</a>
     <a href="/admin" class="nav-link">&#9881; Admin</a>
     <a href="/logout" class="nav-link">Logout</a>
   </div>
 </nav>
 <div class="pl-wrap">
+  <a href="/dashboard" style="display:inline-block;margin-bottom:10px;color:#9ca3af;font-size:13px;text-decoration:none">&#8592; Back to Dashboard</a>
   <h1 class="font-display" style="font-size:30px;margin-bottom:4px">&#127919; Cross-Sport Parlay Lab</h1>
   <p style="color:#6b7280;font-size:13px;margin-bottom:14px">Admin only. Combines the latest <strong>cached</strong> picks from all four apps &mdash; run each sport first, then load. Same-game / same-day legs are correlated; mix games for true diversification.</p>
   <div class="pl-card" style="margin-bottom:16px;display:flex;flex-wrap:wrap;gap:12px;align-items:center">
