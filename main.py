@@ -202,14 +202,16 @@ def _legs_nba(r):
                                stat, line, side, odds, conf))
     return _dedup_best(out)
 
-async def _fetch_sport_legs(token, today):
+async def _fetch_sport_legs(token, dates):
     import asyncio
     import httpx
+    # `dates` is a per-sport map {MLB,NHL,NBA,NFL: "YYYY-MM-DD"} so playoff slates on
+    # different days (e.g. NHL tomorrow, NBA in 2 days) can be combined in one pool.
     endpoints = {
-        "MLB": (SPORT_APPS["MLB"] + "/api/results/" + today, None),
-        "NHL": (SPORT_APPS["NHL"] + "/api/cached", {"target_date": today}),
-        "NBA": (SPORT_APPS["NBA"] + "/api/cached", {"target_date": today}),
-        "NFL": (SPORT_APPS["NFL"] + "/api/cached", {"target_date": today}),
+        "MLB": (SPORT_APPS["MLB"] + "/api/results/" + dates["MLB"], None),
+        "NHL": (SPORT_APPS["NHL"] + "/api/cached", {"target_date": dates["NHL"]}),
+        "NBA": (SPORT_APPS["NBA"] + "/api/cached", {"target_date": dates["NBA"]}),
+        "NFL": (SPORT_APPS["NFL"] + "/api/cached", {"target_date": dates["NFL"]}),
     }
     normalizers = {"MLB": _legs_mlb, "NHL": _legs_nhl, "NBA": _legs_nba, "NFL": _legs_nfl}
     headers = {"Authorization": "Bearer " + token}
@@ -654,7 +656,12 @@ PARLAY_HTML = BASE_STYLE + """
   <h1 class="font-display" style="font-size:30px;margin-bottom:4px">&#127919; Cross-Sport Parlay Lab</h1>
   <p style="color:#6b7280;font-size:13px;margin-bottom:14px">Admin only. Combines the latest <strong>cached</strong> picks from all four apps &mdash; run each sport first, then load. Same-game / same-day legs are correlated; mix games for true diversification.</p>
   <div class="pl-card" style="margin-bottom:16px;display:flex;flex-wrap:wrap;gap:12px;align-items:center">
-    <label style="font-size:12px;color:#9ca3af">Slate date <input type="date" id="plDate" class="pl-in" style="margin-left:6px"></label>
+    <span style="font-size:12px;color:#9ca3af">Slate dates &mdash;</span>
+    <label style="font-size:12px;color:#9ca3af">MLB <input type="date" id="plDateMLB" class="pl-in" style="margin-left:3px"></label>
+    <label style="font-size:12px;color:#9ca3af">NHL <input type="date" id="plDateNHL" class="pl-in" style="margin-left:3px"></label>
+    <label style="font-size:12px;color:#9ca3af">NBA <input type="date" id="plDateNBA" class="pl-in" style="margin-left:3px"></label>
+    <label style="font-size:12px;color:#9ca3af">NFL <input type="date" id="plDateNFL" class="pl-in" style="margin-left:3px"></label>
+    <button class="pl-btn" onclick="plSyncDates()" title="Set all sports to the MLB date">All =</button>
     <button class="pl-btn" onclick="plLoad()">&#8635; Load Picks</button>
     <span id="plStatus" style="font-size:12px;color:#6b7280"></span>
     <div id="plSports" style="width:100%"></div>
@@ -702,22 +709,26 @@ function _esc(s){return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,
 function plAmToDec(a){var n=parseFloat(String(a==null?"":a).replace("+","").trim());if(!n||isNaN(n))return null;return n>0?1+n/100:1+100/Math.abs(n);}
 function plDecToAm(d){if(!d||d<=1)return "";var v=d>=2?(d-1)*100:-100/(d-1);v=Math.round(v);return (v>0?"+":"")+v;}
 function plUid(l){return l.sport+"|"+l.player+"|"+l.market+"|"+l.side+"|"+l.line;}
+var PL_SPORTS=["MLB","NHL","NBA","NFL"];
+function plSportDate(s){return document.getElementById("plDate"+s).value||plToday();}
+function plSyncDates(){var v=plSportDate("MLB");PL_SPORTS.forEach(function(s){document.getElementById("plDate"+s).value=v;});}
 function plLoad(){
-  var dt=document.getElementById("plDate").value||plToday();
-  document.getElementById("plStatus").textContent="Loading "+dt+" ...";
-  fetch("/admin/parlay/data?date="+encodeURIComponent(dt),{credentials:"same-origin"})
+  var qs=[], lbl=[];
+  PL_SPORTS.forEach(function(s){var v=plSportDate(s);qs.push("date_"+s.toLowerCase()+"="+encodeURIComponent(v));lbl.push(s+" "+v);});
+  document.getElementById("plStatus").textContent="Loading "+lbl.join(" \\u00b7 ")+" ...";
+  fetch("/admin/parlay/data?"+qs.join("&"),{credentials:"same-origin"})
     .then(function(r){if(!r.ok)throw new Error("HTTP "+r.status);return r.json();})
     .then(function(d){
       PL_ALL=d.legs||[]; PL_TICKET=[]; PL_ALL.forEach(function(l,i){l._i=i;});
       var s=d.summary||{}, html="";
-      ["MLB","NHL","NBA","NFL"].forEach(function(k){
+      PL_SPORTS.forEach(function(k){
         var info=s[k]||{}; var ok=info.ok;
         var col=ok?(info.count>0?"background:#14532d;color:#86efac":"background:#374151;color:#9ca3af"):"background:#7f1d1d;color:#fca5a5";
-        var txt=ok?(info.count+" legs"):("error: "+(info.error||"")); 
+        var txt=ok?(info.count+" legs "+(info.date||"")):("error: "+(info.error||"")); 
         html+='<span class="pl-st" style="'+col+'">'+k+": "+_esc(txt)+"</span>";
       });
       document.getElementById("plSports").innerHTML=html;
-      document.getElementById("plStatus").textContent=PL_ALL.length+" total legs loaded for "+_esc(d.date||dt);
+      document.getElementById("plStatus").textContent=PL_ALL.length+" total legs loaded";
       plBuildFilters(); plRender(); plMath();
     })
     .catch(function(e){document.getElementById("plStatus").textContent="Load failed: "+e.message;});
@@ -803,7 +814,7 @@ function plBuild(rand){
   for(var k=0;k<pool.length&&PL_TICKET.length<n;k++){var u=pool[k]._i;if(seen[u])continue;seen[u]=1;PL_TICKET.push(pool[k]);}
   plRender();plMath();
 }
-document.getElementById("plDate").value=plToday();
+PL_SPORTS.forEach(function(s){document.getElementById("plDate"+s).value=plToday();});
 plLoad();
 /*PARLAY_JS_END*/</script>
 """
@@ -1228,16 +1239,18 @@ async def admin_parlay_data(request: Request):
     if not is_admin(request):
         return JSONResponse({"error": "admin only"}, status_code=403)
     from datetime import datetime, timezone
-    today = request.query_params.get("date") or datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    qp = request.query_params
+    default = qp.get("date") or datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    dates = {s: (qp.get("date_" + s.lower()) or default) for s in ("MLB", "NHL", "NBA", "NFL")}
     email = get_user(request) or ADMIN_EMAIL
     token = make_app_token(email)
-    sports = await _fetch_sport_legs(token, today)
+    sports = await _fetch_sport_legs(token, dates)
     legs = []
     for info in sports.values():
         legs.extend(info.get("legs", []))
-    summary = {s: {"ok": i["ok"], "error": i["error"], "count": len(i["legs"])}
+    summary = {s: {"ok": i["ok"], "error": i["error"], "count": len(i["legs"]), "date": dates[s]}
                for s, i in sports.items()}
-    return JSONResponse({"date": today, "summary": summary, "legs": legs})
+    return JSONResponse({"date": default, "dates": dates, "summary": summary, "legs": legs})
 
 
 @app.post("/admin/cancel")
