@@ -133,7 +133,17 @@ def _legs_nhl(r):
     for k in ("picks", "rest", "ptsPicks", "ptsRest", "astPicks", "astRest", "savesPicks", "savesRest"):
         plays += (r.get(k) or [])
     for p in plays:
-        if not p or not p.get("name") or not _floor_ok(p.get("realOdds")):
+        if not p or not p.get("name"):
+            continue
+        # Respect the NHL app's lean: a FADE-tagged pick means the model expects the
+        # UNDER (avg is clearly below the book line + weak recent rate), so add it as
+        # an UNDER leg priced on the under odds instead of forcing an OVER bet on a
+        # player the app is telling you to fade. Everything else stays an OVER leg.
+        if p.get("tag") == "FADE":
+            side, odds = "UNDER", p.get("realUnderOdds")
+        else:
+            side, odds = "OVER", p.get("realOdds")
+        if not _floor_ok(odds):
             continue
         line = p.get("realLine")
         if line is None:
@@ -142,7 +152,7 @@ def _legs_nhl(r):
             line = 1.5
         rate = p.get("vsLineRate") or p.get("rateB") or p.get("rateA") or 0
         out.append(_mk_leg("NHL", p.get("name"), p.get("team"), p.get("opponent"),
-                           p.get("mkt") or "Shots on Goal", line, "OVER", p.get("realOdds"), rate))
+                           p.get("mkt") or "Shots on Goal", line, side, odds, rate))
     return _dedup_best(out, "player")
 
 def _legs_nfl(r):
