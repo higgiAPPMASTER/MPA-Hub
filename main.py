@@ -61,15 +61,62 @@ def _floor_ok(odds, floor=-500):
         return False
     return a >= floor
 
-def _mk_leg(sport, player, team, opp, market, line, side, odds, rate=0):
+def _frac(h, t, rate=None):
+    """Render a hit fraction like '6/10 (60%)' from whatever pieces exist."""
+    if h is not None and t:
+        return "%s/%s (%s%%)" % (h, t, rate) if rate not in (None, "") else "%s/%s" % (h, t)
+    if rate not in (None, ""):
+        return "%s%%" % rate
+    return None
+
+def _mklog(rows, vkeys, n=8):
+    """Normalize a sport's recent-game log into [{d,v,opp}] for the 'why' ladder.
+    vkeys is a tuple of candidate value keys (first present, non-None wins)."""
+    out = []
+    if isinstance(vkeys, str):
+        vkeys = (vkeys,)
+    for g in (rows or [])[:n]:
+        if not isinstance(g, dict):
+            continue
+        v = None
+        for k in vkeys:
+            if g.get(k) is not None:
+                v = g.get(k)
+                break
+        if v is None:
+            continue
+        out.append({"d": g.get("d") or g.get("date") or "",
+                    "v": v, "opp": g.get("opp") or g.get("o") or ""})
+    return out
+
+def _why(head=None, stats=None, log=None, log_label=None):
+    """Bundle the reasoning behind a pick: a headline, key/value stats, and a
+    recent-game ladder. Empty pieces are dropped so the modal only shows real data."""
+    w = {}
+    if head:
+        w["head"] = head
+    if stats:
+        s = [[a, b] for a, b in stats if b not in (None, "", "None")]
+        if s:
+            w["stats"] = s
+    if log:
+        w["log"] = log
+        if log_label:
+            w["logLabel"] = log_label
+    return w or None
+
+def _mk_leg(sport, player, team, opp, market, line, side, odds, rate=0, why=None):
     dec = _am_to_dec(odds)
     if not dec:
         return None
     pair = [x for x in [team, opp] if x]
     game = " vs ".join(sorted(pair)) if len(pair) == 2 else (("vs " + opp) if opp else (team or ""))
-    return {"sport": sport, "player": player or "", "team": team or "", "opp": opp or "",
-            "market": market or "", "line": line, "side": side or "OVER",
-            "odds": str(odds), "dec": round(dec, 4), "rate": int(rate or 0), "game": game}
+    leg = {"sport": sport, "player": player or "", "team": team or "", "opp": opp or "",
+           "market": market or "", "line": line, "side": side or "OVER",
+           "odds": str(odds), "dec": round(dec, 4), "rate": int(rate or 0), "game": game}
+    if why:
+        leg["why"] = why
+    return leg
 
 def _dedup_best(legs, by="player_market"):
     """Keep the single best leg per key (priced, then rate, then odds). Side is NOT in
@@ -93,16 +140,31 @@ def _legs_mlb(r):
     if not isinstance(r, dict):
         return out
     for p in (r.get("top9") or []) + (r.get("also_ran") or []):
+        s4 = p.get("s4_pct")
+        why = _why(
+            head=("Records a hit in %s%% of head-to-head games" % s4) if s4 not in (None, "") else "Top hitter to record a hit",
+            stats=[["Hit rate vs opp", ("%s%%" % s4) if s4 not in (None, "") else None],
+                   ["Line", "0.5 hits"]],
+            log=_mklog(p.get("recent_hit_log"), "h"),
+            log_label="Recent games \u2014 hits")
         out.append(_mk_leg("MLB", p.get("full_name") or p.get("name"), p.get("team"),
                            p.get("opp"), "Hits", 0.5, "OVER", p.get("hit_odds"),
-                           p.get("s4_pct") or 0))
+                           s4 or 0, why))
     for p in (r.get("under_picks") or []):
+        u_stats = [["Lifetime vs pitcher", p.get("s1_disp")],
+                   ["Under score", p.get("under_score")]]
         if _floor_ok(p.get("under_odds")):
             out.append(_mk_leg("MLB", p.get("name"), p.get("team"), p.get("opp"),
-                               "Under Hits", 1.5, "UNDER", p.get("under_odds")))
+                               "Under Hits", 1.5, "UNDER", p.get("under_odds"), 0,
+                               _why(head="Cold matchup / recent form \u2014 model leans under",
+                                    stats=u_stats, log=_mklog(p.get("recent_hit_log"), "h"),
+                                    log_label="Recent games \u2014 hits")))
         if _floor_ok(p.get("tb_under_odds")):
             out.append(_mk_leg("MLB", p.get("name"), p.get("team"), p.get("opp"),
-                               "Under Total Bases", 1.5, "UNDER", p.get("tb_under_odds")))
+                               "Under Total Bases", 1.5, "UNDER", p.get("tb_under_odds"), 0,
+                               _why(head="Cold matchup / recent form \u2014 model leans under",
+                                    stats=u_stats, log=_mklog(p.get("recent_hit_log"), "tb"),
+                                    log_label="Recent games \u2014 total bases")))
     for p in ((r.get("pitcher_k") or {}).get("all") or []):
         if not (p.get("pick") and (p.get("starts") or 0) > 0):
             continue
@@ -111,18 +173,39 @@ def _legs_mlb(r):
         line = p.get("sugg_line") if has_sugg else p.get("line")
         odds = p.get("sugg_odds") if has_sugg else (
             p.get("over_odds") if p.get("pick") == "OVER" else p.get("under_odds"))
-        out.append(_mk_leg("MLB", p.get("name"), "", p.get("opp"), "Strikeouts", line, side, odds))
+        why = _why(
+            head=("Avg %s K vs a %s line" % (p.get("avg_k"), line)) if p.get("avg_k") not in (None, "") else None,
+            stats=[["Avg K", p.get("avg_k")],
+                   ["Blended", p.get("blended_avg_k") if p.get("blended_avg_k") is not None else p.get("blended")],
+                   ["Hit rate", p.get("k_hit_rate") if p.get("k_hit_rate") not in (None, "") else p.get("hit_rate")],
+                   ["Line", line]],
+            log=_mklog(p.get("recent_k_log"), "v"),
+            log_label="Recent starts \u2014 Ks")
+        out.append(_mk_leg("MLB", p.get("name"), "", p.get("opp"), "Strikeouts", line, side, odds, 0, why))
     for p in (r.get("runs_picks") or []):
         od = p.get("over_odds") if p.get("pick") == "OVER" else p.get("under_odds")
         ln = p.get("line") if p.get("line") is not None else 0.5
-        out.append(_mk_leg("MLB", p.get("name"), p.get("team"), p.get("opp"), "Runs", ln, p.get("pick"), od))
+        why = _why(
+            head=("Scores a run in %s of games (%s)" % (p.get("rate_disp"), p.get("basis"))) if p.get("rate_disp") not in (None, "") else None,
+            stats=[["Runs rate", p.get("rate_disp")], ["Basis", p.get("basis")],
+                   ["Wilson LB", p.get("wilson")], ["Games", p.get("games")]],
+            log=_mklog(p.get("recent_runs_log"), "r"),
+            log_label="Recent games \u2014 runs")
+        out.append(_mk_leg("MLB", p.get("name"), p.get("team"), p.get("opp"), "Runs", ln, p.get("pick"), od, 0, why))
     _prop_lbl = {"pitcher_hits_allowed": "Hits Allowed", "pitcher_outs": "Outs",
                  "pitcher_earned_runs": "Earned Runs"}
     for mkt, bucket in (r.get("pitcher_props") or {}).items():
         for p in ((bucket or {}).get("picks") or []):
             od = p.get("over_odds") if p.get("pick") == "OVER" else p.get("under_odds")
+            why = _why(
+                head=("Blend %s vs a %s line" % (p.get("blended"), p.get("line"))) if p.get("blended") not in (None, "") else None,
+                stats=[["Career avg", p.get("career_avg")], ["Recent avg", p.get("recent_avg")],
+                       ["Blended", p.get("blended")], ["Hit rate", p.get("hit_rate")],
+                       ["Line", p.get("line")]],
+                log=_mklog(p.get("recent_log"), "v"),
+                log_label="Recent starts")
             out.append(_mk_leg("MLB", p.get("name"), p.get("team"), p.get("opp"),
-                               _prop_lbl.get(mkt, mkt), p.get("line"), p.get("pick"), od))
+                               _prop_lbl.get(mkt, mkt), p.get("line"), p.get("pick"), od, 0, why))
     return _dedup_best(out)
 
 def _legs_nhl(r):
@@ -151,8 +234,17 @@ def _legs_nhl(r):
         if line is None:
             line = 1.5
         rate = p.get("vsLineRate") or p.get("rateB") or p.get("rateA") or 0
+        why = _why(
+            head=p.get("head"),
+            stats=[["Avg", p.get("avg")],
+                   ["Career vs opp", _frac(p.get("hitsA"), p.get("totA"), p.get("rateA"))],
+                   ["L10 home/road", _frac(p.get("hitsB"), p.get("totB"), p.get("rateB"))],
+                   ["Cleared line", _frac(p.get("vsLineHits"), p.get("vsLineTotal"), p.get("vsLineRate"))],
+                   ["Projected", p.get("proj")], ["Line", line]],
+            log=_mklog(p.get("glog"), "v"),
+            log_label="Recent games")
         out.append(_mk_leg("NHL", p.get("name"), p.get("team"), p.get("opponent"),
-                           p.get("mkt") or "Shots on Goal", line, side, odds, rate))
+                           p.get("mkt") or "Shots on Goal", line, side, odds, rate, why))
     return _dedup_best(out, "player")
 
 def _legs_nfl(r):
@@ -173,8 +265,17 @@ def _legs_nfl(r):
         if line is None:
             line = p.get("dispLine")
         rate = p.get("vsLineRate") or p.get("rateB") or p.get("rateA") or 0
+        why = _why(
+            head=p.get("head"),
+            stats=[["Avg", p.get("avg")],
+                   ["Career vs opp", _frac(p.get("hitsA"), p.get("totA"), p.get("rateA"))],
+                   ["Recent home/road", _frac(p.get("hitsB"), p.get("totB"), p.get("rateB"))],
+                   ["Cleared line", _frac(p.get("vsLineHits"), p.get("vsLineTotal"), p.get("vsLineRate"))],
+                   ["Score", p.get("score")], ["Line", line]],
+            log=_mklog(p.get("glog"), "v"),
+            log_label="Recent games")
         out.append(_mk_leg("NFL", p.get("name"), p.get("team"), p.get("opponent"),
-                           p.get("mkt") or p.get("label") or "", line, side, odds, rate))
+                           p.get("mkt") or p.get("label") or "", line, side, odds, rate, why))
     return _dedup_best(out, "player")
 
 def _legs_nba(r):
@@ -204,12 +305,19 @@ def _legs_nba(r):
         ar = p.get("alt_rec")
         if ar and not (pat and ar != "OVER"):
             cands.append((ar, 0))
+        why = _why(
+            head=("Recent avg %s vs a %s line" % (p.get("recent_avg"), line)) if p.get("recent_avg") not in (None, "") else None,
+            stats=[["Recent avg", p.get("recent_avg")], ["Gap vs line", p.get("gap")],
+                   ["Consistency %", p.get("pct")], ["Line rec", p.get("line_rec")],
+                   ["Streak rec", p.get("streak_rec")], ["Min/game", p.get("mpg")]],
+            log=_mklog(p.get("glog"), "v"),
+            log_label="Recent games vs opp")
         for side, conf in cands:
             odds = (p.get("dk_over_odds") or p.get("fd_odds")) if side == "OVER" else p.get("dk_under_odds")
             if not _floor_ok(odds):
                 continue
             out.append(_mk_leg("NBA", p.get("player"), p.get("team"), p.get("opp"),
-                               stat, line, side, odds, conf))
+                               stat, line, side, odds, conf, why))
     return _dedup_best(out)
 
 async def _fetch_sport_legs(token, dates):
@@ -663,6 +771,11 @@ PARLAY_HTML = BASE_STYLE + """
     <a href="/logout" class="nav-link">Logout</a>
   </div>
 </nav>
+<div id="plWhyModal" onclick="if(event.target===this)plCloseWhy()" style="display:none;position:fixed;inset:0;z-index:300;background:rgba(0,0,0,.72);align-items:flex-start;justify-content:center;padding:48px 16px;overflow:auto">
+  <div style="background:#0b0b0b;border:1px solid #262626;border-radius:12px;max-width:520px;width:100%;padding:18px;box-shadow:0 20px 60px rgba(0,0,0,.6)">
+    <div id="plWhyBody"></div>
+  </div>
+</div>
 <div class="pl-wrap">
   <a href="/dashboard" style="display:inline-block;margin-bottom:10px;color:#9ca3af;font-size:13px;text-decoration:none">&#8592; Back to Dashboard</a>
   <h1 class="font-display" style="font-size:30px;margin-bottom:4px">&#127919; Cross-Sport Parlay Lab</h1>
@@ -726,7 +839,7 @@ PARLAY_HTML = BASE_STYLE + """
             <option value="even">Even mix (round-robin)</option>
             <option value="custom">Custom per-sport</option>
           </select>
-          <label style="font-size:11px;color:#9ca3af">Legs <select id="plGen" class="pl-in" style="margin-left:3px"><option>3</option><option>4</option><option>5</option><option>6</option><option>7</option><option>8</option><option>9</option><option>10</option><option>11</option><option>12</option><option>13</option><option>14</option><option>15</option><option>16</option><option>17</option><option>18</option><option>19</option><option>20</option></select></label>
+          <label style="font-size:11px;color:#9ca3af">Legs <select id="plGen" class="pl-in" style="margin-left:3px"><option>2</option><option>3</option><option>4</option><option>5</option><option>6</option><option>7</option><option>8</option><option>9</option><option>10</option><option>11</option><option>12</option><option>13</option><option>14</option><option>15</option><option>16</option><option>17</option><option>18</option><option>19</option><option>20</option></select></label>
         </div>
         <div id="plCustomMix" style="display:none;gap:8px;flex-wrap:wrap;align-items:center;font-size:11px;color:#9ca3af">
           <span>MLB <input id="plMixMLB" class="pl-in" type="number" min="0" value="0" style="width:48px"></span>
@@ -840,7 +953,7 @@ function plRender(){
     var sc=l.side==="OVER"?"pl-over":"pl-under";
     return '<div class="pl-leg">'
       +'<span class="pl-chip '+PL_COLORS[l.sport]+'">'+l.sport+"</span>"
-      +'<div style="flex:1;min-width:0"><div style="font-weight:700;font-size:13px">'+_esc(l.player)+'</div>'
+      +'<div style="flex:1;min-width:0"><div onclick="plWhy('+l._i+')" title="Why this pick?" style="font-weight:700;font-size:13px;cursor:pointer;border-bottom:1px dotted #6b7280;display:inline-block">'+_esc(l.player)+'</div>'
       +'<div style="font-size:11px;color:#9ca3af">'+_esc(l.market)+' &middot; <span class="'+sc+'">'+l.side+" "+(l.line==null?"":l.line)+'</span> &middot; '+_esc(l.game)+"</div></div>"
       +'<span style="font-weight:800;font-size:13px;color:#f59e0b;min-width:48px;text-align:right">'+plAmFmt(l.odds)+"</span>"
       +(added?'<button class="pl-rm" onclick="plRemoveIdx('+l._i+')">&minus;</button>':'<button class="pl-add" onclick="plAddIdx('+l._i+')">+ Add</button>')
@@ -852,6 +965,39 @@ function plRender(){
 function plAddIdx(i){var l=PL_ALL[i];if(!l)return;for(var j=0;j<PL_TICKET.length;j++){if(PL_TICKET[j]._i===i)return;}PL_TICKET.push(l);plRender();plMath();}
 function plRemoveIdx(i){PL_TICKET=PL_TICKET.filter(function(l){return l._i!==i;});plRender();plMath();}
 function plClear(){PL_TICKET=[];plRender();plMath();}
+function plWhy(i){
+  var l=PL_ALL[i]; if(!l)return;
+  var w=l.why||{};
+  var sc=l.side==="OVER"?"#34d399":"#f87171";
+  var html='<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:10px">'
+    +'<div><div style="font-weight:800;font-size:17px">'+_esc(l.player)+'</div>'
+    +'<div style="font-size:12px;color:#9ca3af;margin-top:3px"><span class="pl-chip '+(PL_COLORS[l.sport]||"")+'">'+_esc(l.sport)+'</span> '+_esc(l.market)+' &middot; <span style="color:'+sc+';font-weight:700">'+l.side+" "+(l.line==null?"":l.line)+'</span> &middot; <span style="color:#f59e0b;font-weight:700">'+plAmFmt(l.odds)+'</span></div>'
+    +'<div style="font-size:11px;color:#6b7280;margin-top:2px">'+_esc(l.game)+'</div></div>'
+    +'<span onclick="plCloseWhy()" style="cursor:pointer;color:#9ca3af;font-size:26px;line-height:1">&times;</span></div>';
+  if(w.head) html+='<div style="font-size:13px;color:#cbd5e1;background:#161616;border:1px solid #232323;border-radius:6px;padding:8px 10px;margin-bottom:12px">'+_esc(w.head)+'</div>';
+  if(w.stats&&w.stats.length){
+    html+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:12px">';
+    w.stats.forEach(function(s){html+='<div style="background:#0e0e0e;border:1px solid #232323;border-radius:6px;padding:6px 9px"><div style="font-size:9px;color:#6b7280;text-transform:uppercase;letter-spacing:.04em">'+_esc(s[0])+'</div><div style="font-size:13px;font-weight:700;margin-top:1px">'+_esc(s[1])+'</div></div>';});
+    html+='</div>';
+  }
+  if(w.log&&w.log.length){
+    if(w.logLabel) html+='<div style="font-size:11px;color:#9ca3af;margin-bottom:5px">'+_esc(w.logLabel)+'</div>';
+    var ln=parseFloat(l.line);
+    html+='<div style="display:flex;flex-wrap:wrap;gap:5px">';
+    w.log.forEach(function(g){
+      var v=parseFloat(g.v),hit=null;
+      if(!isNaN(ln)&&!isNaN(v)) hit=(l.side==="UNDER")?(v<ln):(v>ln);
+      var bg=hit===null?"#1f2937":(hit?"#14532d":"#7f1d1d");
+      var fg=hit===null?"#9ca3af":(hit?"#86efac":"#fca5a5");
+      html+='<div title="'+_esc(g.d)+(g.opp?(" vs "+_esc(g.opp)):"")+'" style="min-width:44px;text-align:center;background:'+bg+';color:'+fg+';border-radius:5px;padding:4px 6px"><div style="font-size:14px;font-weight:800">'+_esc(g.v)+'</div><div style="font-size:9px;opacity:.85">'+_esc(g.d)+'</div></div>';
+    });
+    html+='</div><div style="font-size:10px;color:#6b7280;margin-top:6px">Green = cleared the pick ('+(l.side==="UNDER"?"under":"over")+' the line).</div>';
+  }
+  if(!w.head&&!(w.stats&&w.stats.length)&&!(w.log&&w.log.length)) html+='<div style="font-size:12px;color:#6b7280">No extra detail available for this pick.</div>';
+  document.getElementById("plWhyBody").innerHTML=html;
+  document.getElementById("plWhyModal").style.display="flex";
+}
+function plCloseWhy(){document.getElementById("plWhyModal").style.display="none";}
 function plTicket(){
   var t=document.getElementById("plTicket");
   if(!PL_TICKET.length){t.innerHTML='<div style="color:#6b7280;font-size:12px;padding:8px 0">No legs yet. Add from the left.</div>';return;}
@@ -859,7 +1005,7 @@ function plTicket(){
     var sc=l.side==="OVER"?"pl-over":"pl-under";
     return '<div class="pl-leg" style="padding:7px 2px">'
       +'<span class="pl-chip '+PL_COLORS[l.sport]+'">'+l.sport+"</span>"
-      +'<div style="flex:1;min-width:0"><div style="font-weight:700;font-size:12px">'+_esc(l.player)+'</div>'
+      +'<div style="flex:1;min-width:0"><div onclick="plWhy('+l._i+')" title="Why this pick?" style="font-weight:700;font-size:12px;cursor:pointer;border-bottom:1px dotted #6b7280;display:inline-block">'+_esc(l.player)+'</div>'
       +'<div style="font-size:10px;color:#9ca3af">'+_esc(l.market)+' <span class="'+sc+'">'+l.side+" "+(l.line==null?"":l.line)+"</span></div></div>"
       +'<span style="font-weight:800;font-size:12px;color:#f59e0b">'+plAmFmt(l.odds)+"</span>"
       +'<button class="pl-rm" onclick="plRemoveIdx('+l._i+')">&minus;</button></div>';
@@ -889,7 +1035,7 @@ function plBuild(rand){
   if(document.getElementById("plMix").value==="custom"){
     want=0;PL_SPORTS.forEach(function(s){want+=parseInt(document.getElementById("plMix"+s).value,10)||0;});
   }else{
-    want=parseInt(document.getElementById("plGen").value,10)||3;
+    want=parseInt(document.getElementById("plGen").value,10)||2;
   }
   // FRESH LIST: on Surprise, drop players from the previous Surprise so back-to-back
   // presses don't repeat faces. Falls back to the full pool if excluding would leave
@@ -907,7 +1053,7 @@ function plBuild(rand){
   if(document.getElementById("plMix").value==="custom"){
     PL_SPORTS.forEach(function(s){take(s,parseInt(document.getElementById("plMix"+s).value,10)||0);});
   }else{
-    var n=parseInt(document.getElementById("plGen").value,10)||3;
+    var n=parseInt(document.getElementById("plGen").value,10)||2;
     var active=PL_SPORTS.filter(function(s){return buckets[s].length;});
     if(rand)plShuffle(active);
     var guard=0;
