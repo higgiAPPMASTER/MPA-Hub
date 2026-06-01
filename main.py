@@ -25,6 +25,210 @@ def make_app_token(email):
     from datetime import datetime, timedelta
     key = JWT_SECRET or SECRET_KEY
     return _jwt.encode({"sub": email, "exp": datetime.utcnow() + timedelta(hours=24)}, key, algorithm="HS256")
+
+# ── Cross-sport parlay (admin only) ──────────────────────────────────────────
+# Each sport app exposes a read-only cached-picks JSON endpoint that accepts the
+# hub's JWT. We mint a token for the admin, pull the latest cached picks from all
+# four server-side (no fresh runs), normalize every market into one common leg
+# shape, and feed them to the admin-only combined parlay builder. Admin runs each
+# sport app first; this just reads whatever each app last cached.
+SPORT_APPS = {
+    "MLB": os.environ.get("MLB_URL", "https://moneyball-1.onrender.com"),
+    "NHL": os.environ.get("NHL_URL", "https://nhl-shots.onrender.com"),
+    "NBA": os.environ.get("NBA_URL", "https://nba-money-buckets.onrender.com"),
+    "NFL": os.environ.get("NFL_URL", "https://nfl-money-bombs.onrender.com"),
+}
+
+def _am_to_dec(odds):
+    """American odds -> decimal multiplier (mirror of each app's _amToDec)."""
+    try:
+        n = float(str(odds).replace("+", "").strip())
+    except (TypeError, ValueError):
+        return None
+    if not n:
+        return None
+    return 1 + n / 100.0 if n > 0 else 1 + 100.0 / abs(n)
+
+def _floor_ok(odds, floor=-500):
+    """A priced leg only qualifies at -500 or better; None/empty is rejected."""
+    if odds is None or odds == "":
+        return False
+    try:
+        a = float(str(odds).replace("+", "").strip())
+    except (TypeError, ValueError):
+        return False
+    if a == 0:
+        return False
+    return a >= floor
+
+def _mk_leg(sport, player, team, opp, market, line, side, odds, rate=0):
+    dec = _am_to_dec(odds)
+    if not dec:
+        return None
+    pair = [x for x in [team, opp] if x]
+    game = " vs ".join(sorted(pair)) if len(pair) == 2 else (("vs " + opp) if opp else (team or ""))
+    return {"sport": sport, "player": player or "", "team": team or "", "opp": opp or "",
+            "market": market or "", "line": line, "side": side or "OVER",
+            "odds": str(odds), "dec": round(dec, 4), "rate": int(rate or 0), "game": game}
+
+def _dedup_best(legs, by="player_market"):
+    """Keep the single best leg per key (priced, then rate, then odds). Side is NOT in
+    the key, so a conflicting OVER and UNDER for the same player/market collapse to the
+    better one. `by` mirrors each app's own pool granularity:
+      "player"        -> one best leg per player        (NHL, NFL pools)
+      "player_market" -> one best leg per player+market (MLB type|stat, NBA player|stat)."""
+    best = {}
+    for lg in legs:
+        if not lg:
+            continue
+        key = (lg["sport"], lg["player"]) if by == "player" else (lg["sport"], lg["player"], lg["market"])
+        score = (1 if lg["dec"] else 0, lg["rate"], min(lg["dec"] or 0, 11))
+        cur = best.get(key)
+        if cur is None or score > cur[0]:
+            best[key] = (score, lg)
+    return [v[1] for v in best.values()]
+
+def _legs_mlb(r):
+    out = []
+    if not isinstance(r, dict):
+        return out
+    for p in (r.get("top9") or []) + (r.get("also_ran") or []):
+        out.append(_mk_leg("MLB", p.get("full_name") or p.get("name"), p.get("team"),
+                           p.get("opp"), "Hits", 0.5, "OVER", p.get("hit_odds"),
+                           p.get("s4_pct") or 0))
+    for p in (r.get("under_picks") or []):
+        if _floor_ok(p.get("under_odds")):
+            out.append(_mk_leg("MLB", p.get("name"), p.get("team"), p.get("opp"),
+                               "Under Hits", 1.5, "UNDER", p.get("under_odds")))
+        if _floor_ok(p.get("tb_under_odds")):
+            out.append(_mk_leg("MLB", p.get("name"), p.get("team"), p.get("opp"),
+                               "Under Total Bases", 1.5, "UNDER", p.get("tb_under_odds")))
+    for p in ((r.get("pitcher_k") or {}).get("all") or []):
+        if not (p.get("pick") and (p.get("starts") or 0) > 0):
+            continue
+        has_sugg = p.get("sugg_line") is not None
+        side = "OVER" if has_sugg else p.get("pick")
+        line = p.get("sugg_line") if has_sugg else p.get("line")
+        odds = p.get("sugg_odds") if has_sugg else (
+            p.get("over_odds") if p.get("pick") == "OVER" else p.get("under_odds"))
+        out.append(_mk_leg("MLB", p.get("name"), "", p.get("opp"), "Strikeouts", line, side, odds))
+    for p in (r.get("runs_picks") or []):
+        od = p.get("over_odds") if p.get("pick") == "OVER" else p.get("under_odds")
+        ln = p.get("line") if p.get("line") is not None else 0.5
+        out.append(_mk_leg("MLB", p.get("name"), p.get("team"), p.get("opp"), "Runs", ln, p.get("pick"), od))
+    _prop_lbl = {"pitcher_hits_allowed": "Hits Allowed", "pitcher_outs": "Outs",
+                 "pitcher_earned_runs": "Earned Runs"}
+    for mkt, bucket in (r.get("pitcher_props") or {}).items():
+        for p in ((bucket or {}).get("picks") or []):
+            od = p.get("over_odds") if p.get("pick") == "OVER" else p.get("under_odds")
+            out.append(_mk_leg("MLB", p.get("name"), p.get("team"), p.get("opp"),
+                               _prop_lbl.get(mkt, mkt), p.get("line"), p.get("pick"), od))
+    return _dedup_best(out)
+
+def _legs_nhl(r):
+    out = []
+    if not isinstance(r, dict):
+        return out
+    plays = []
+    for k in ("picks", "rest", "ptsPicks", "ptsRest", "astPicks", "astRest", "savesPicks", "savesRest"):
+        plays += (r.get(k) or [])
+    for p in plays:
+        if not p or not p.get("name") or not _floor_ok(p.get("realOdds")):
+            continue
+        line = p.get("realLine")
+        if line is None:
+            line = p.get("dispLine")
+        if line is None:
+            line = 1.5
+        rate = p.get("vsLineRate") or p.get("rateB") or p.get("rateA") or 0
+        out.append(_mk_leg("NHL", p.get("name"), p.get("team"), p.get("opponent"),
+                           p.get("mkt") or "Shots on Goal", line, "OVER", p.get("realOdds"), rate))
+    return _dedup_best(out, "player")
+
+def _legs_nfl(r):
+    out = []
+    if not isinstance(r, dict):
+        return out
+    for p in (r.get("all") or []):
+        if not p or not p.get("name") or not p.get("pick"):
+            continue
+        if p.get("score") is None or (p.get("score") or 0) < 55:  # NFL pool gate (matches _parlayPool)
+            continue
+        pick = p.get("pick")
+        side = "OVER" if pick in ("O", "OVER") else "UNDER" if pick in ("U", "UNDER") else pick
+        odds = p.get("realOdds") if side == "OVER" else p.get("realUnderOdds") if side == "UNDER" else None
+        if not _floor_ok(odds):
+            continue
+        line = p.get("realLine")
+        if line is None:
+            line = p.get("dispLine")
+        rate = p.get("vsLineRate") or p.get("rateB") or p.get("rateA") or 0
+        out.append(_mk_leg("NFL", p.get("name"), p.get("team"), p.get("opponent"),
+                           p.get("mkt") or p.get("label") or "", line, side, odds, rate))
+    return _dedup_best(out, "player")
+
+def _legs_nba(r):
+    out = []
+    if not isinstance(r, dict):
+        return out
+    for p in (r.get("all_picks") or []):
+        if not p:
+            continue
+        mpg = p.get("mpg")
+        if mpg is not None and mpg < 18:
+            continue
+        line = p.get("dk_line")
+        if line is None:
+            line = p.get("fd_line")
+        stat = p.get("stat_label") or p.get("stat") or ""
+        pat = bool(p.get("has_consistency"))
+        cands = []
+        if pat:
+            cands.append(("OVER", p.get("pct") or 0))
+        lr = p.get("line_rec")
+        if lr and not (pat and lr != "OVER"):
+            cands.append((lr, p.get("line_rec_pct") or 0))
+        sr = p.get("streak_rec")
+        if sr and not (pat and sr != "OVER"):
+            cands.append((sr, min(99, 85 + (p.get("streak_n") or 0))))
+        ar = p.get("alt_rec")
+        if ar and not (pat and ar != "OVER"):
+            cands.append((ar, 0))
+        for side, conf in cands:
+            odds = (p.get("dk_over_odds") or p.get("fd_odds")) if side == "OVER" else p.get("dk_under_odds")
+            if not _floor_ok(odds):
+                continue
+            out.append(_mk_leg("NBA", p.get("player"), p.get("team"), p.get("opp"),
+                               stat, line, side, odds, conf))
+    return _dedup_best(out)
+
+async def _fetch_sport_legs(token, today):
+    import asyncio
+    import httpx
+    endpoints = {
+        "MLB": (SPORT_APPS["MLB"] + "/api/results/" + today, None),
+        "NHL": (SPORT_APPS["NHL"] + "/api/cached", {"target_date": today}),
+        "NBA": (SPORT_APPS["NBA"] + "/api/cached", {"target_date": today}),
+        "NFL": (SPORT_APPS["NFL"] + "/api/cached", {"target_date": today}),
+    }
+    normalizers = {"MLB": _legs_mlb, "NHL": _legs_nhl, "NBA": _legs_nba, "NFL": _legs_nfl}
+    headers = {"Authorization": "Bearer " + token}
+
+    async def one(client, sport):
+        url, params = endpoints[sport]
+        try:
+            resp = await client.get(url, params=params, headers=headers)
+            if resp.status_code != 200:
+                return sport, {"ok": False, "error": "HTTP " + str(resp.status_code), "legs": []}
+            legs = [l for l in normalizers[sport](resp.json()) if l]
+            return sport, {"ok": True, "error": "", "legs": legs}
+        except Exception as e:
+            return sport, {"ok": False, "error": str(e)[:160], "legs": []}
+
+    async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
+        pairs = await asyncio.gather(*[one(client, s) for s in endpoints])
+    return {sport: info for sport, info in pairs}
+
 db = create_client(SUPABASE_URL, SUPABASE_KEY) if SUPABASE_URL and SUPABASE_KEY else None
 
 ADMIN_EMAIL    = os.environ.get("ADMIN_EMAIL", "")
@@ -415,6 +619,195 @@ function openApp(url){window.open(url+'?token='+encodeURIComponent(_hubTok),'_bl
 </script>
 """
 
+PARLAY_HTML = BASE_STYLE + """
+<style>
+  .pl-wrap{max-width:1200px;margin:0 auto;padding:90px 18px 60px}
+  .pl-grid{display:grid;grid-template-columns:1fr 360px;gap:20px}
+  @media(max-width:880px){.pl-grid{grid-template-columns:1fr}}
+  .pl-card{background:#0f172a;border:1px solid #1f2937;border-radius:12px;padding:16px}
+  .pl-btn{background:#f59e0b;color:#111;border:none;border-radius:8px;padding:9px 16px;font-weight:800;cursor:pointer;font-size:13px}
+  .pl-btn.sec{background:#1f2937;color:#e5e7eb}
+  .pl-in{background:#0b1220;border:1px solid #334155;border-radius:8px;color:#e5e7eb;padding:8px 10px;font-size:13px}
+  .pl-chip{display:inline-block;padding:3px 9px;border-radius:999px;font-size:10px;font-weight:800;letter-spacing:.04em}
+  .pl-mlb{background:#1e3a8a;color:#bfdbfe}.pl-nhl{background:#0e7490;color:#a5f3fc}
+  .pl-nba{background:#7e22ce;color:#e9d5ff}.pl-nfl{background:#b45309;color:#fde68a}
+  .pl-leg{display:flex;align-items:center;gap:10px;border-bottom:1px solid #1f2937;padding:9px 4px}
+  .pl-leg:hover{background:#111827}
+  .pl-over{color:#4ade80;font-weight:800}.pl-under{color:#fb7185;font-weight:800}
+  .pl-add{background:#14532d;color:#86efac;border:1px solid #166534;border-radius:7px;padding:4px 10px;font-size:12px;cursor:pointer;font-weight:800}
+  .pl-rm{background:#7f1d1d;color:#fca5a5;border:1px solid #991b1b;border-radius:7px;padding:3px 9px;font-size:12px;cursor:pointer;font-weight:800}
+  .pl-fbtn{background:#1f2937;color:#9ca3af;border:1px solid #334155;border-radius:999px;padding:5px 12px;font-size:12px;cursor:pointer;font-weight:700}
+  .pl-fbtn.on{background:#f59e0b;color:#111;border-color:#f59e0b}
+  .pl-st{font-size:11px;font-weight:700;padding:3px 9px;border-radius:6px;margin-right:6px;display:inline-block;margin-top:6px}
+</style>
+<nav>
+  <a href="/dashboard" class="brand">
+    <img src="https://moneypicksarena.com/logo.png" alt="Money Picks Arena"/>
+    <span class="brand-text"><span class="m">Money </span><span class="p">Picks </span><span class="a">Arena</span></span>
+  </a>
+  <div class="nav-links">
+    <a href="/admin" class="nav-link">&#9881; Admin</a>
+    <a href="/logout" class="nav-link">Logout</a>
+  </div>
+</nav>
+<div class="pl-wrap">
+  <h1 class="font-display" style="font-size:30px;margin-bottom:4px">&#127919; Cross-Sport Parlay Lab</h1>
+  <p style="color:#6b7280;font-size:13px;margin-bottom:14px">Admin only. Combines the latest <strong>cached</strong> picks from all four apps &mdash; run each sport first, then load. Same-game / same-day legs are correlated; mix games for true diversification.</p>
+  <div class="pl-card" style="margin-bottom:16px;display:flex;flex-wrap:wrap;gap:12px;align-items:center">
+    <label style="font-size:12px;color:#9ca3af">Slate date <input type="date" id="plDate" class="pl-in" style="margin-left:6px"></label>
+    <button class="pl-btn" onclick="plLoad()">&#8635; Load Picks</button>
+    <span id="plStatus" style="font-size:12px;color:#6b7280"></span>
+    <div id="plSports" style="width:100%"></div>
+  </div>
+  <div class="pl-grid">
+    <div class="pl-card">
+      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px" id="plSportFilters"></div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:10px">
+        <button class="pl-fbtn on" data-side="ALL" onclick="plSetSide(this)">All</button>
+        <button class="pl-fbtn" data-side="OVER" onclick="plSetSide(this)">Overs</button>
+        <button class="pl-fbtn" data-side="UNDER" onclick="plSetSide(this)">Unders</button>
+        <select id="plGame" class="pl-in" onchange="plRender()" style="min-width:150px"><option value="ALL">All games</option></select>
+        <input id="plSearch" class="pl-in" placeholder="Search player..." oninput="plRender()" style="flex:1;min-width:120px">
+      </div>
+      <div id="plCount" style="font-size:11px;color:#6b7280;margin-bottom:6px"></div>
+      <div id="plList" style="max-height:60vh;overflow:auto"></div>
+    </div>
+    <div class="pl-card" style="align-self:start;position:sticky;top:80px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <strong class="font-display" style="font-size:16px">Your Ticket</strong>
+        <button class="pl-rm" onclick="plClear()">Clear</button>
+      </div>
+      <div id="plTicket" style="max-height:36vh;overflow:auto"></div>
+      <div style="border-top:1px solid #1f2937;margin-top:10px;padding-top:10px">
+        <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px"><span style="color:#9ca3af">Legs</span><span id="plLegs" style="font-weight:800">0</span></div>
+        <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px"><span style="color:#9ca3af">Combined odds</span><span id="plOdds" style="font-weight:800;color:#f59e0b">&mdash;</span></div>
+        <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:8px"><span style="color:#9ca3af">Decimal</span><span id="plDec" style="font-weight:700">&mdash;</span></div>
+        <label style="font-size:12px;color:#9ca3af">Stake $ <input id="plStake" class="pl-in" type="number" value="10" min="1" step="1" oninput="plMath()" style="width:80px;margin-left:6px"></label>
+        <div style="display:flex;justify-content:space-between;font-size:14px;margin-top:8px"><span style="color:#9ca3af">Payout</span><span id="plPay" style="font-weight:900;color:#4ade80">&mdash;</span></div>
+        <div style="display:flex;justify-content:space-between;font-size:12px"><span style="color:#9ca3af">Profit</span><span id="plProfit" style="font-weight:700;color:#86efac">&mdash;</span></div>
+      </div>
+      <div style="border-top:1px solid #1f2937;margin-top:10px;padding-top:10px;display:flex;gap:8px;align-items:center">
+        <select id="plGen" class="pl-in"><option>3</option><option>4</option><option>5</option><option>6</option><option>8</option></select>
+        <button class="pl-btn sec" style="flex:1" onclick="plBuild(false)">Top legs</button>
+        <button class="pl-btn sec" style="flex:1" onclick="plBuild(true)">Surprise</button>
+      </div>
+    </div>
+  </div>
+</div>
+<script>/*PARLAY_JS_START*/
+var PL_ALL=[], PL_TICKET=[], PL_SPORT="ALL", PL_SIDE="ALL";
+var PL_COLORS={MLB:"pl-mlb",NHL:"pl-nhl",NBA:"pl-nba",NFL:"pl-nfl"};
+function plToday(){var d=new Date();return d.toISOString().slice(0,10);}
+function _esc(s){return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");}
+function plAmToDec(a){var n=parseFloat(String(a==null?"":a).replace("+","").trim());if(!n||isNaN(n))return null;return n>0?1+n/100:1+100/Math.abs(n);}
+function plDecToAm(d){if(!d||d<=1)return "";var v=d>=2?(d-1)*100:-100/(d-1);v=Math.round(v);return (v>0?"+":"")+v;}
+function plUid(l){return l.sport+"|"+l.player+"|"+l.market+"|"+l.side+"|"+l.line;}
+function plLoad(){
+  var dt=document.getElementById("plDate").value||plToday();
+  document.getElementById("plStatus").textContent="Loading "+dt+" ...";
+  fetch("/admin/parlay/data?date="+encodeURIComponent(dt),{credentials:"same-origin"})
+    .then(function(r){if(!r.ok)throw new Error("HTTP "+r.status);return r.json();})
+    .then(function(d){
+      PL_ALL=d.legs||[]; PL_TICKET=[]; PL_ALL.forEach(function(l,i){l._i=i;});
+      var s=d.summary||{}, html="";
+      ["MLB","NHL","NBA","NFL"].forEach(function(k){
+        var info=s[k]||{}; var ok=info.ok;
+        var col=ok?(info.count>0?"background:#14532d;color:#86efac":"background:#374151;color:#9ca3af"):"background:#7f1d1d;color:#fca5a5";
+        var txt=ok?(info.count+" legs"):("error: "+(info.error||"")); 
+        html+='<span class="pl-st" style="'+col+'">'+k+": "+_esc(txt)+"</span>";
+      });
+      document.getElementById("plSports").innerHTML=html;
+      document.getElementById("plStatus").textContent=PL_ALL.length+" total legs loaded for "+_esc(d.date||dt);
+      plBuildFilters(); plRender(); plMath();
+    })
+    .catch(function(e){document.getElementById("plStatus").textContent="Load failed: "+e.message;});
+}
+function plBuildFilters(){
+  var sports={}, games={};
+  PL_ALL.forEach(function(l){sports[l.sport]=1; if(l.game)games[l.game]=1;});
+  var sf=document.getElementById("plSportFilters");
+  var order=["ALL","MLB","NHL","NBA","NFL"].filter(function(s){return s==="ALL"||sports[s];});
+  sf.innerHTML=order.map(function(s){
+    return '<button class="pl-fbtn'+(s===PL_SPORT?" on":"")+'" onclick="plSetSport(\\''+s+'\\')">'+s+"</button>";
+  }).join("");
+  var g=document.getElementById("plGame"); var cur=g.value;
+  var opts='<option value="ALL">All games</option>';
+  Object.keys(games).sort().forEach(function(gm){opts+='<option value="'+_esc(gm)+'">'+_esc(gm)+"</option>";});
+  g.innerHTML=opts; g.value=cur&&games[cur]?cur:"ALL";
+}
+function plSetSport(s){PL_SPORT=s;plBuildFilters();plRender();}
+function plSetSide(btn){PL_SIDE=btn.getAttribute("data-side");var ps=btn.parentNode.querySelectorAll(".pl-fbtn");for(var i=0;i<ps.length;i++)ps[i].classList.remove("on");btn.classList.add("on");plRender();}
+function plFiltered(){
+  var q=(document.getElementById("plSearch").value||"").toLowerCase();
+  var gm=document.getElementById("plGame").value;
+  return PL_ALL.filter(function(l){
+    if(PL_SPORT!=="ALL"&&l.sport!==PL_SPORT)return false;
+    if(PL_SIDE!=="ALL"&&l.side!==PL_SIDE)return false;
+    if(gm!=="ALL"&&l.game!==gm)return false;
+    if(q&&l.player.toLowerCase().indexOf(q)<0)return false;
+    return true;
+  }).sort(function(a,b){return (b.rate-a.rate)||(a.dec-b.dec);});
+}
+function plRender(){
+  var list=plFiltered();
+  var inTicket={}; PL_TICKET.forEach(function(l){inTicket[l._i]=1;});
+  document.getElementById("plCount").textContent=list.length+" available legs";
+  if(!list.length){document.getElementById("plList").innerHTML='<div style="color:#6b7280;padding:14px;font-size:13px">No legs. Run the sport apps, pick a date, and Load Picks.</div>';plTicket();return;}
+  var h=list.map(function(l){
+    var added=inTicket[l._i];
+    var sc=l.side==="OVER"?"pl-over":"pl-under";
+    return '<div class="pl-leg">'
+      +'<span class="pl-chip '+PL_COLORS[l.sport]+'">'+l.sport+"</span>"
+      +'<div style="flex:1;min-width:0"><div style="font-weight:700;font-size:13px">'+_esc(l.player)+'</div>'
+      +'<div style="font-size:11px;color:#9ca3af">'+_esc(l.market)+' &middot; <span class="'+sc+'">'+l.side+" "+(l.line==null?"":l.line)+'</span> &middot; '+_esc(l.game)+"</div></div>"
+      +'<span style="font-weight:800;font-size:13px;color:#f59e0b;min-width:48px;text-align:right">'+_esc(l.odds)+"</span>"
+      +(added?'<button class="pl-rm" onclick="plRemoveIdx('+l._i+')">&minus;</button>':'<button class="pl-add" onclick="plAddIdx('+l._i+')">+ Add</button>')
+      +"</div>";
+  }).join("");
+  document.getElementById("plList").innerHTML=h;
+  plTicket();
+}
+function plAddIdx(i){var l=PL_ALL[i];if(!l)return;for(var j=0;j<PL_TICKET.length;j++){if(PL_TICKET[j]._i===i)return;}PL_TICKET.push(l);plRender();plMath();}
+function plRemoveIdx(i){PL_TICKET=PL_TICKET.filter(function(l){return l._i!==i;});plRender();plMath();}
+function plClear(){PL_TICKET=[];plRender();plMath();}
+function plTicket(){
+  var t=document.getElementById("plTicket");
+  if(!PL_TICKET.length){t.innerHTML='<div style="color:#6b7280;font-size:12px;padding:8px 0">No legs yet. Add from the left.</div>';return;}
+  t.innerHTML=PL_TICKET.map(function(l){
+    var sc=l.side==="OVER"?"pl-over":"pl-under";
+    return '<div class="pl-leg" style="padding:7px 2px">'
+      +'<span class="pl-chip '+PL_COLORS[l.sport]+'">'+l.sport+"</span>"
+      +'<div style="flex:1;min-width:0"><div style="font-weight:700;font-size:12px">'+_esc(l.player)+'</div>'
+      +'<div style="font-size:10px;color:#9ca3af">'+_esc(l.market)+' <span class="'+sc+'">'+l.side+" "+(l.line==null?"":l.line)+"</span></div></div>"
+      +'<span style="font-weight:800;font-size:12px;color:#f59e0b">'+_esc(l.odds)+"</span>"
+      +'<button class="pl-rm" onclick="plRemoveIdx('+l._i+')">&minus;</button></div>';
+  }).join("");
+}
+function plMath(){
+  var dec=1, ok=true;
+  PL_TICKET.forEach(function(l){var d=plAmToDec(l.odds);if(!d){ok=false;}else{dec*=d;}});
+  document.getElementById("plLegs").textContent=PL_TICKET.length;
+  if(!PL_TICKET.length||!ok){document.getElementById("plOdds").textContent="\\u2014";document.getElementById("plDec").textContent="\\u2014";document.getElementById("plPay").textContent="\\u2014";document.getElementById("plProfit").textContent="\\u2014";return;}
+  var stake=parseFloat(document.getElementById("plStake").value)||0;
+  var pay=stake*dec;
+  document.getElementById("plOdds").textContent=plDecToAm(dec);
+  document.getElementById("plDec").textContent=dec.toFixed(2);
+  document.getElementById("plPay").textContent="$"+pay.toFixed(2);
+  document.getElementById("plProfit").textContent="$"+(pay-stake).toFixed(2);
+}
+function plBuild(rand){
+  var n=parseInt(document.getElementById("plGen").value,10)||3;
+  var pool=plFiltered().slice();
+  if(rand){for(var i=pool.length-1;i>0;i--){var j=Math.floor(Math.random()*(i+1));var t=pool[i];pool[i]=pool[j];pool[j]=t;}}
+  PL_TICKET=[]; var seen={};
+  for(var k=0;k<pool.length&&PL_TICKET.length<n;k++){var u=pool[k]._i;if(seen[u])continue;seen[u]=1;PL_TICKET.push(pool[k]);}
+  plRender();plMath();
+}
+document.getElementById("plDate").value=plToday();
+plLoad();
+/*PARLAY_JS_END*/</script>
+"""
+
 # ── Routes ─────────────────────────────────────────────────────────────────────
 
 @app.get("/", response_class=HTMLResponse)
@@ -671,7 +1064,9 @@ async def dashboard(request: Request):
         return RedirectResponse(url="/login")
     # Only the admin sees the ⚙️ Admin link. Regular members get an empty string here
     # (the /admin route is still server-side protected by is_admin regardless).
-    admin_link = ('<a href="/admin" style="color:#f59e0b;font-size:12px;font-weight:700;'
+    admin_link = ('<a href="/admin/parlay" style="color:#f59e0b;font-size:12px;font-weight:700;'
+                  'text-decoration:none" class="nav-link">🎯 Parlay Lab</a>'
+                  '<a href="/admin" style="color:#f59e0b;font-size:12px;font-weight:700;'
                   'text-decoration:none" class="nav-link">⚙️ Admin</a>') if is_admin(request) else ""
     return (DASHBOARD_HTML
             .replace("{admin_link}", admin_link)
@@ -819,6 +1214,30 @@ async def admin_dashboard(request: Request):
   </div>
 </body></html>"""
     return HTMLResponse(html)
+
+
+@app.get("/admin/parlay", response_class=HTMLResponse)
+async def admin_parlay(request: Request):
+    if not is_admin(request):
+        return RedirectResponse(url="/login")
+    return HTMLResponse(PARLAY_HTML)
+
+
+@app.get("/admin/parlay/data")
+async def admin_parlay_data(request: Request):
+    if not is_admin(request):
+        return JSONResponse({"error": "admin only"}, status_code=403)
+    from datetime import datetime, timezone
+    today = request.query_params.get("date") or datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    email = get_user(request) or ADMIN_EMAIL
+    token = make_app_token(email)
+    sports = await _fetch_sport_legs(token, today)
+    legs = []
+    for info in sports.values():
+        legs.extend(info.get("legs", []))
+    summary = {s: {"ok": i["ok"], "error": i["error"], "count": len(i["legs"])}
+               for s, i in sports.items()}
+    return JSONResponse({"date": today, "summary": summary, "legs": legs})
 
 
 @app.post("/admin/cancel")
