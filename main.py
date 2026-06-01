@@ -869,8 +869,26 @@ function plMath(){
 }
 function plMixToggle(){document.getElementById("plCustomMix").style.display=document.getElementById("plMix").value==="custom"?"flex":"none";}
 function plShuffle(a){for(var i=a.length-1;i>0;i--){var j=Math.floor(Math.random()*(i+1));var t=a[i];a[i]=a[j];a[j]=t;}return a;}
+// Players used in the most recent Surprise parlay, so the next Surprise draws a
+// different set instead of repeating the same faces.
+var PL_LAST_PLAYERS=[];
 function plBuild(rand){
   var pool=plFiltered();                 // already sorted rate desc (tie: shorter odds)
+  // How many legs this build needs (custom mix sums the per-sport inputs).
+  var want;
+  if(document.getElementById("plMix").value==="custom"){
+    want=0;PL_SPORTS.forEach(function(s){want+=parseInt(document.getElementById("plMix"+s).value,10)||0;});
+  }else{
+    want=parseInt(document.getElementById("plGen").value,10)||3;
+  }
+  // FRESH LIST: on Surprise, drop players from the previous Surprise so back-to-back
+  // presses don't repeat faces. Falls back to the full pool if excluding would leave
+  // too few legs to fill the parlay.
+  if(rand&&PL_LAST_PLAYERS.length){
+    var avoid={};PL_LAST_PLAYERS.forEach(function(p){avoid[p]=1;});
+    var fresh=pool.filter(function(l){return !avoid[l.player];});
+    if(fresh.length>=want)pool=fresh;
+  }
   var buckets={}; PL_SPORTS.forEach(function(s){buckets[s]=[];});
   pool.forEach(function(l){if(buckets[l.sport])buckets[l.sport].push(l);});
   if(rand)PL_SPORTS.forEach(function(s){plShuffle(buckets[s]);});
@@ -889,6 +907,7 @@ function plBuild(rand){
       if(++guard>500)break;
     }
   }
+  if(rand)PL_LAST_PLAYERS=PL_TICKET.map(function(l){return l.player;});
   plRender();plMath();
 }
 PL_SPORTS.forEach(function(s){document.getElementById("plDate"+s).value=plToday();});
