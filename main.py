@@ -671,9 +671,24 @@ PARLAY_HTML = BASE_STYLE + """
       <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px" id="plSportFilters"></div>
       <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:10px">
         <button class="pl-fbtn on" data-side="ALL" onclick="plSetSide(this)">All</button>
-        <button class="pl-fbtn" data-side="OVER" onclick="plSetSide(this)">Overs</button>
-        <button class="pl-fbtn" data-side="UNDER" onclick="plSetSide(this)">Unders</button>
-        <select id="plGame" class="pl-in" onchange="plRender()" style="min-width:150px"><option value="ALL">All games</option></select>
+        <button class="pl-fbtn" data-side="OVER" onclick="plSetSide(this)">&#11014; Overs</button>
+        <button class="pl-fbtn" data-side="UNDER" onclick="plSetSide(this)">&#11015; Unders</button>
+        <button class="pl-fbtn" id="plMinusBtn" onclick="plToggleMinus()">&minus; Odds Only</button>
+        <button class="pl-fbtn" id="plPlusBtn" onclick="plTogglePlus()">&plus; Odds Only</button>
+        <div style="position:relative">
+          <button class="pl-fbtn" id="plCatBtn" onclick="plToggleCatMenu(event)">&#9776; Categories &#9662;</button>
+          <div id="plCatMenu" style="display:none;position:absolute;z-index:50;top:calc(100% + 4px);left:0;background:#0e0e0e;border:1px solid #1f2937;border-radius:8px;padding:8px;min-width:190px;max-height:280px;overflow:auto;box-shadow:0 8px 24px rgba(0,0,0,.55)">
+            <div style="display:flex;gap:6px;margin-bottom:6px"><button class="pl-fbtn" style="font-size:10px;padding:2px 8px" onclick="plCatSetAll(true)">All</button><button class="pl-fbtn" style="font-size:10px;padding:2px 8px" onclick="plCatSetAll(false)">None</button></div>
+            <div id="plCatList"></div>
+          </div>
+        </div>
+        <div style="position:relative">
+          <button class="pl-fbtn" id="plGameBtn" onclick="plToggleGameMenu(event)">&#9776; Games &#9662;</button>
+          <div id="plGameMenu" style="display:none;position:absolute;z-index:50;top:calc(100% + 4px);left:0;background:#0e0e0e;border:1px solid #1f2937;border-radius:8px;padding:8px;min-width:210px;max-height:280px;overflow:auto;box-shadow:0 8px 24px rgba(0,0,0,.55)">
+            <div style="display:flex;gap:6px;margin-bottom:6px"><button class="pl-fbtn" style="font-size:10px;padding:2px 8px" onclick="plGameSetAll(true)">All</button><button class="pl-fbtn" style="font-size:10px;padding:2px 8px" onclick="plGameSetAll(false)">None</button></div>
+            <div id="plGameList"></div>
+          </div>
+        </div>
         <input id="plSearch" class="pl-in" placeholder="Search player..." oninput="plRender()" style="flex:1;min-width:120px">
       </div>
       <div id="plCount" style="font-size:11px;color:#6b7280;margin-bottom:6px"></div>
@@ -693,21 +708,36 @@ PARLAY_HTML = BASE_STYLE + """
         <div style="display:flex;justify-content:space-between;font-size:14px;margin-top:8px"><span style="color:#9ca3af">Payout</span><span id="plPay" style="font-weight:900;color:#4ade80">&mdash;</span></div>
         <div style="display:flex;justify-content:space-between;font-size:12px"><span style="color:#9ca3af">Profit</span><span id="plProfit" style="font-weight:700;color:#86efac">&mdash;</span></div>
       </div>
-      <div style="border-top:1px solid #1f2937;margin-top:10px;padding-top:10px;display:flex;gap:8px;align-items:center">
-        <select id="plGen" class="pl-in"><option>3</option><option>4</option><option>5</option><option>6</option><option>8</option></select>
-        <button class="pl-btn sec" style="flex:1" onclick="plBuild(false)">Top legs</button>
-        <button class="pl-btn sec" style="flex:1" onclick="plBuild(true)">Surprise</button>
+      <div style="border-top:1px solid #1f2937;margin-top:10px;padding-top:10px;display:flex;flex-direction:column;gap:8px">
+        <div style="display:flex;gap:8px;align-items:center">
+          <select id="plMix" class="pl-in" onchange="plMixToggle()" style="flex:1">
+            <option value="even">Even mix (round-robin)</option>
+            <option value="custom">Custom per-sport</option>
+          </select>
+          <label style="font-size:11px;color:#9ca3af">Legs <select id="plGen" class="pl-in" style="margin-left:3px"><option>3</option><option>4</option><option>5</option><option>6</option><option>7</option><option>8</option><option>9</option><option>10</option><option>11</option><option>12</option><option>13</option><option>14</option><option>15</option><option>16</option><option>17</option><option>18</option><option>19</option><option>20</option></select></label>
+        </div>
+        <div id="plCustomMix" style="display:none;gap:8px;flex-wrap:wrap;align-items:center;font-size:11px;color:#9ca3af">
+          <span>MLB <input id="plMixMLB" class="pl-in" type="number" min="0" value="0" style="width:48px"></span>
+          <span>NHL <input id="plMixNHL" class="pl-in" type="number" min="0" value="0" style="width:48px"></span>
+          <span>NBA <input id="plMixNBA" class="pl-in" type="number" min="0" value="0" style="width:48px"></span>
+          <span>NFL <input id="plMixNFL" class="pl-in" type="number" min="0" value="0" style="width:48px"></span>
+        </div>
+        <div style="display:flex;gap:8px">
+          <button class="pl-btn sec" style="flex:1" onclick="plBuild(false)">Top legs</button>
+          <button class="pl-btn sec" style="flex:1" onclick="plBuild(true)">Surprise</button>
+        </div>
       </div>
     </div>
   </div>
 </div>
 <script>/*PARLAY_JS_START*/
-var PL_ALL=[], PL_TICKET=[], PL_SPORT="ALL", PL_SIDE="ALL";
+var PL_ALL=[], PL_TICKET=[], PL_SPORT="ALL", PL_SIDE="ALL", PL_MINUS=false, PL_PLUS=false, PL_CATS={}, PL_GAMES={};
 var PL_COLORS={MLB:"pl-mlb",NHL:"pl-nhl",NBA:"pl-nba",NFL:"pl-nfl"};
 function plToday(){var d=new Date();return d.toISOString().slice(0,10);}
 function _esc(s){return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");}
 function plAmToDec(a){var n=parseFloat(String(a==null?"":a).replace("+","").trim());if(!n||isNaN(n))return null;return n>0?1+n/100:1+100/Math.abs(n);}
 function plDecToAm(d){if(!d||d<=1)return "";var v=d>=2?(d-1)*100:-100/(d-1);v=Math.round(v);return (v>0?"+":"")+v;}
+function plAmFmt(o){if(o==null||o==="")return "\\u2014";var a=parseFloat(o);if(isNaN(a))return _esc(o);return (a>0?"+":"")+a;}
 function plUid(l){return l.sport+"|"+l.player+"|"+l.market+"|"+l.side+"|"+l.line;}
 var PL_SPORTS=["MLB","NHL","NBA","NFL"];
 function plSportDate(s){return document.getElementById("plDate"+s).value||plToday();}
@@ -734,27 +764,56 @@ function plLoad(){
     .catch(function(e){document.getElementById("plStatus").textContent="Load failed: "+e.message;});
 }
 function plBuildFilters(){
-  var sports={}, games={};
-  PL_ALL.forEach(function(l){sports[l.sport]=1; if(l.game)games[l.game]=1;});
+  var sports={}, games={}, cats={};
+  PL_ALL.forEach(function(l){sports[l.sport]=1; if(l.game)games[l.game]=1; if(l.market)cats[l.market]=1;});
   var sf=document.getElementById("plSportFilters");
   var order=["ALL","MLB","NHL","NBA","NFL"].filter(function(s){return s==="ALL"||sports[s];});
   sf.innerHTML=order.map(function(s){
     return '<button class="pl-fbtn'+(s===PL_SPORT?" on":"")+'" onclick="plSetSport(\\''+s+'\\')">'+s+"</button>";
   }).join("");
-  var g=document.getElementById("plGame"); var cur=g.value;
-  var opts='<option value="ALL">All games</option>';
-  Object.keys(games).sort().forEach(function(gm){opts+='<option value="'+_esc(gm)+'">'+_esc(gm)+"</option>";});
-  g.innerHTML=opts; g.value=cur&&games[cur]?cur:"ALL";
+  var rowS='display:flex;align-items:center;gap:6px;font-size:12px;color:#cbd5e1;padding:3px 2px;cursor:pointer;white-space:nowrap';
+  var ck=Object.keys(cats).sort();
+  var nc={}; ck.forEach(function(c){nc[c]=(PL_CATS[c]!==false);}); PL_CATS=nc;
+  document.getElementById("plCatList").innerHTML=ck.length?ck.map(function(c){
+    return '<label style="'+rowS+'"><input type="checkbox" class="pl-cat-cb" value="'+_esc(c)+'"'+(PL_CATS[c]?" checked":"")+' onchange="plCatChanged()"> '+_esc(c)+"</label>";
+  }).join(""):'<div style="font-size:11px;color:#666">Load picks first.</div>';
+  var gk=Object.keys(games).sort();
+  var ng={}; gk.forEach(function(g){ng[g]=(PL_GAMES[g]!==false);}); PL_GAMES=ng;
+  document.getElementById("plGameList").innerHTML=gk.length?gk.map(function(g){
+    return '<label style="'+rowS+'"><input type="checkbox" class="pl-game-cb" value="'+_esc(g)+'"'+(PL_GAMES[g]?" checked":"")+' onchange="plGameChanged()"> '+_esc(g)+"</label>";
+  }).join(""):'<div style="font-size:11px;color:#666">Load picks first.</div>';
+  plPaintCatBtn(); plPaintGameBtn();
 }
 function plSetSport(s){PL_SPORT=s;plBuildFilters();plRender();}
-function plSetSide(btn){PL_SIDE=btn.getAttribute("data-side");var ps=btn.parentNode.querySelectorAll(".pl-fbtn");for(var i=0;i<ps.length;i++)ps[i].classList.remove("on");btn.classList.add("on");plRender();}
+function plSetSide(btn){PL_SIDE=btn.getAttribute("data-side");var ps=[btn.parentNode.querySelector('[data-side="ALL"]'),btn.parentNode.querySelector('[data-side="OVER"]'),btn.parentNode.querySelector('[data-side="UNDER"]')];for(var i=0;i<ps.length;i++){if(ps[i])ps[i].classList.remove("on");}btn.classList.add("on");plRender();}
+function plToggleMinus(){PL_MINUS=!PL_MINUS;if(PL_MINUS)PL_PLUS=false;plPaintOddsBtns();plRender();}
+function plTogglePlus(){PL_PLUS=!PL_PLUS;if(PL_PLUS)PL_MINUS=false;plPaintOddsBtns();plRender();}
+function plPaintOddsBtns(){var m=document.getElementById("plMinusBtn");if(m)m.classList.toggle("on",PL_MINUS);var p=document.getElementById("plPlusBtn");if(p)p.classList.toggle("on",PL_PLUS);}
+function plPaintCatBtn(){var n=0,t=0;for(var k in PL_CATS){t++;if(PL_CATS[k])n++;}var b=document.getElementById("plCatBtn");if(b)b.innerHTML="\\u2630 Categories ("+n+"/"+t+") \\u25be";}
+function plPaintGameBtn(){var n=0,t=0;for(var k in PL_GAMES){t++;if(PL_GAMES[k])n++;}var b=document.getElementById("plGameBtn");if(b)b.innerHTML="\\u2630 Games ("+n+"/"+t+") \\u25be";}
+function plToggleCatMenu(e){if(e)e.stopPropagation();var m=document.getElementById("plCatMenu");m.style.display=(m.style.display==="block")?"none":"block";}
+function plToggleGameMenu(e){if(e)e.stopPropagation();var m=document.getElementById("plGameMenu");m.style.display=(m.style.display==="block")?"none":"block";}
+function plCatChanged(){var cb=document.querySelectorAll(".pl-cat-cb");for(var i=0;i<cb.length;i++)PL_CATS[cb[i].value]=cb[i].checked;plPaintCatBtn();plRender();}
+function plGameChanged(){var cb=document.querySelectorAll(".pl-game-cb");for(var i=0;i<cb.length;i++)PL_GAMES[cb[i].value]=cb[i].checked;plPaintGameBtn();plRender();}
+function plCatSetAll(v){var cb=document.querySelectorAll(".pl-cat-cb");for(var i=0;i<cb.length;i++)cb[i].checked=v;plCatChanged();}
+function plGameSetAll(v){var cb=document.querySelectorAll(".pl-game-cb");for(var i=0;i<cb.length;i++)cb[i].checked=v;plGameChanged();}
+document.addEventListener("click",function(e){
+  [["plCatMenu","plCatBtn"],["plGameMenu","plGameBtn"]].forEach(function(p){
+    var m=document.getElementById(p[0]);if(!m||m.style.display!=="block")return;
+    var b=document.getElementById(p[1]);
+    if(m.contains(e.target)||(b&&b.contains(e.target)))return;
+    m.style.display="none";
+  });
+});
 function plFiltered(){
   var q=(document.getElementById("plSearch").value||"").toLowerCase();
-  var gm=document.getElementById("plGame").value;
   return PL_ALL.filter(function(l){
     if(PL_SPORT!=="ALL"&&l.sport!==PL_SPORT)return false;
     if(PL_SIDE!=="ALL"&&l.side!==PL_SIDE)return false;
-    if(gm!=="ALL"&&l.game!==gm)return false;
+    if(PL_MINUS&&!(parseFloat(l.odds)<0))return false;
+    if(PL_PLUS&&!(parseFloat(l.odds)>0))return false;
+    if(l.market&&PL_CATS[l.market]===false)return false;
+    if(l.game&&PL_GAMES[l.game]===false)return false;
     if(q&&l.player.toLowerCase().indexOf(q)<0)return false;
     return true;
   }).sort(function(a,b){return (b.rate-a.rate)||(a.dec-b.dec);});
@@ -771,7 +830,7 @@ function plRender(){
       +'<span class="pl-chip '+PL_COLORS[l.sport]+'">'+l.sport+"</span>"
       +'<div style="flex:1;min-width:0"><div style="font-weight:700;font-size:13px">'+_esc(l.player)+'</div>'
       +'<div style="font-size:11px;color:#9ca3af">'+_esc(l.market)+' &middot; <span class="'+sc+'">'+l.side+" "+(l.line==null?"":l.line)+'</span> &middot; '+_esc(l.game)+"</div></div>"
-      +'<span style="font-weight:800;font-size:13px;color:#f59e0b;min-width:48px;text-align:right">'+_esc(l.odds)+"</span>"
+      +'<span style="font-weight:800;font-size:13px;color:#f59e0b;min-width:48px;text-align:right">'+plAmFmt(l.odds)+"</span>"
       +(added?'<button class="pl-rm" onclick="plRemoveIdx('+l._i+')">&minus;</button>':'<button class="pl-add" onclick="plAddIdx('+l._i+')">+ Add</button>')
       +"</div>";
   }).join("");
@@ -790,7 +849,7 @@ function plTicket(){
       +'<span class="pl-chip '+PL_COLORS[l.sport]+'">'+l.sport+"</span>"
       +'<div style="flex:1;min-width:0"><div style="font-weight:700;font-size:12px">'+_esc(l.player)+'</div>'
       +'<div style="font-size:10px;color:#9ca3af">'+_esc(l.market)+' <span class="'+sc+'">'+l.side+" "+(l.line==null?"":l.line)+"</span></div></div>"
-      +'<span style="font-weight:800;font-size:12px;color:#f59e0b">'+_esc(l.odds)+"</span>"
+      +'<span style="font-weight:800;font-size:12px;color:#f59e0b">'+plAmFmt(l.odds)+"</span>"
       +'<button class="pl-rm" onclick="plRemoveIdx('+l._i+')">&minus;</button></div>';
   }).join("");
 }
@@ -806,12 +865,28 @@ function plMath(){
   document.getElementById("plPay").textContent="$"+pay.toFixed(2);
   document.getElementById("plProfit").textContent="$"+(pay-stake).toFixed(2);
 }
+function plMixToggle(){document.getElementById("plCustomMix").style.display=document.getElementById("plMix").value==="custom"?"flex":"none";}
+function plShuffle(a){for(var i=a.length-1;i>0;i--){var j=Math.floor(Math.random()*(i+1));var t=a[i];a[i]=a[j];a[j]=t;}return a;}
 function plBuild(rand){
-  var n=parseInt(document.getElementById("plGen").value,10)||3;
-  var pool=plFiltered().slice();
-  if(rand){for(var i=pool.length-1;i>0;i--){var j=Math.floor(Math.random()*(i+1));var t=pool[i];pool[i]=pool[j];pool[j]=t;}}
+  var pool=plFiltered();                 // already sorted rate desc (tie: shorter odds)
+  var buckets={}; PL_SPORTS.forEach(function(s){buckets[s]=[];});
+  pool.forEach(function(l){if(buckets[l.sport])buckets[l.sport].push(l);});
+  if(rand)PL_SPORTS.forEach(function(s){plShuffle(buckets[s]);});
   PL_TICKET=[]; var seen={};
-  for(var k=0;k<pool.length&&PL_TICKET.length<n;k++){var u=pool[k]._i;if(seen[u])continue;seen[u]=1;PL_TICKET.push(pool[k]);}
+  function take(s,cnt){var b=buckets[s]||[],got=0;for(var k=0;k<b.length&&got<cnt;k++){var u=b[k]._i;if(seen[u])continue;seen[u]=1;PL_TICKET.push(b[k]);got++;}return got;}
+  if(document.getElementById("plMix").value==="custom"){
+    PL_SPORTS.forEach(function(s){take(s,parseInt(document.getElementById("plMix"+s).value,10)||0);});
+  }else{
+    var n=parseInt(document.getElementById("plGen").value,10)||3;
+    var active=PL_SPORTS.filter(function(s){return buckets[s].length;});
+    if(rand)plShuffle(active);
+    var guard=0;
+    while(PL_TICKET.length<n&&active.length){
+      for(var i=0;i<active.length&&PL_TICKET.length<n;i++){take(active[i],1);}
+      active=active.filter(function(s){return buckets[s].some(function(l){return !seen[l._i];});});
+      if(++guard>500)break;
+    }
+  }
   plRender();plMath();
 }
 PL_SPORTS.forEach(function(s){document.getElementById("plDate"+s).value=plToday();});
