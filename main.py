@@ -889,19 +889,20 @@ function plLoad(){
     .catch(function(e){document.getElementById("plStatus").textContent="Load failed: "+e.message;});
 }
 function plBuildFilters(){
-  var sports={}, games={}, cats={};
-  PL_ALL.forEach(function(l){sports[l.sport]=1; if(l.game)games[l.game]=1; if(l.market)cats[l.market]=1;});
+  var sports={}, games={}, cats={}, scat={};
+  PL_ALL.forEach(function(l){sports[l.sport]=1; if(l.game)games[l.game]=1; if(l.market){cats[l.market]=1; if(PL_SPORT==="ALL"||l.sport===PL_SPORT)scat[l.market]=1;}});
   var sf=document.getElementById("plSportFilters");
   var order=["ALL","MLB","NHL","NBA","NFL"].filter(function(s){return s==="ALL"||sports[s];});
   sf.innerHTML=order.map(function(s){
     return '<button class="pl-fbtn'+(s===PL_SPORT?" on":"")+'" onclick="plSetSport(\\''+s+'\\')">'+s+"</button>";
   }).join("");
   var rowS='display:flex;align-items:center;gap:6px;font-size:12px;color:#cbd5e1;padding:3px 2px;cursor:pointer;white-space:nowrap';
-  var ck=Object.keys(cats).sort();
-  var nc={}; ck.forEach(function(c){nc[c]=(PL_CATS[c]!==false);}); PL_CATS=nc;
+  Object.keys(cats).forEach(function(c){if(PL_CATS[c]===undefined)PL_CATS[c]=true;});
+  var ck=Object.keys(scat).sort();
+  var noLoad=Object.keys(cats).length===0;
   document.getElementById("plCatList").innerHTML=ck.length?ck.map(function(c){
     return '<label style="'+rowS+'"><input type="checkbox" class="pl-cat-cb" value="'+_esc(c)+'"'+(PL_CATS[c]?" checked":"")+' onchange="plCatChanged()"> '+_esc(c)+"</label>";
-  }).join(""):'<div style="font-size:11px;color:#666">Load picks first.</div>';
+  }).join(""):(noLoad?'<div style="font-size:11px;color:#666">Load picks first.</div>':'<div style="font-size:11px;color:#666">No categories for this sport.</div>');
   var gk=Object.keys(games).sort();
   var ng={}; gk.forEach(function(g){ng[g]=(PL_GAMES[g]!==false);}); PL_GAMES=ng;
   document.getElementById("plGameList").innerHTML=gk.length?gk.map(function(g){
@@ -914,7 +915,7 @@ function plSetSide(btn){PL_SIDE=btn.getAttribute("data-side");var ps=[btn.parent
 function plToggleMinus(){PL_MINUS=!PL_MINUS;if(PL_MINUS)PL_PLUS=false;plPaintOddsBtns();plRender();}
 function plTogglePlus(){PL_PLUS=!PL_PLUS;if(PL_PLUS)PL_MINUS=false;plPaintOddsBtns();plRender();}
 function plPaintOddsBtns(){var m=document.getElementById("plMinusBtn");if(m)m.classList.toggle("on",PL_MINUS);var p=document.getElementById("plPlusBtn");if(p)p.classList.toggle("on",PL_PLUS);}
-function plPaintCatBtn(){var n=0,t=0;for(var k in PL_CATS){t++;if(PL_CATS[k])n++;}var b=document.getElementById("plCatBtn");if(b)b.innerHTML="\\u2630 Categories ("+n+"/"+t+") \\u25be";}
+function plPaintCatBtn(){var cb=document.querySelectorAll(".pl-cat-cb");var t=cb.length,n=0;for(var i=0;i<cb.length;i++)if(cb[i].checked)n++;var b=document.getElementById("plCatBtn");if(b)b.innerHTML="\\u2630 Categories ("+n+"/"+t+") \\u25be";}
 function plPaintGameBtn(){var n=0,t=0;for(var k in PL_GAMES){t++;if(PL_GAMES[k])n++;}var b=document.getElementById("plGameBtn");if(b)b.innerHTML="\\u2630 Games ("+n+"/"+t+") \\u25be";}
 function plToggleCatMenu(e){if(e)e.stopPropagation();var m=document.getElementById("plCatMenu");m.style.display=(m.style.display==="block")?"none":"block";}
 function plToggleGameMenu(e){if(e)e.stopPropagation();var m=document.getElementById("plGameMenu");m.style.display=(m.style.display==="block")?"none":"block";}
