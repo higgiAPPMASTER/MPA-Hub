@@ -119,16 +119,24 @@ def _mk_leg(sport, player, team, opp, market, line, side, odds, rate=0, why=None
     return leg
 
 def _dedup_best(legs, by="player_market"):
-    """Keep the single best leg per key (priced, then rate, then odds). Side is NOT in
-    the key, so a conflicting OVER and UNDER for the same player/market collapse to the
-    better one. `by` mirrors each app's own pool granularity:
-      "player"        -> one best leg per player        (NHL, NFL pools)
-      "player_market" -> one best leg per player+market (MLB type|stat, NBA player|stat)."""
+    """Keep the single best leg per key (priced, then rate, then odds). `by` mirrors
+    each app's own pool granularity:
+      "player"             -> one best leg per player            (NFL pool)
+      "player_market"      -> one best leg per player+market     (MLB type|stat, NBA player|stat)
+      "player_market_side" -> one best leg per player+market+side (NHL: keeps the OVER
+                              AND the UNDER side of the same market so both are draftable).
+    For "player"/"player_market" side is NOT in the key, so a conflicting OVER and UNDER
+    for the same player/market collapse to the better one."""
     best = {}
     for lg in legs:
         if not lg:
             continue
-        key = (lg["sport"], lg["player"]) if by == "player" else (lg["sport"], lg["player"], lg["market"])
+        if by == "player":
+            key = (lg["sport"], lg["player"])
+        elif by == "player_market_side":
+            key = (lg["sport"], lg["player"], lg["market"], lg["side"])
+        else:
+            key = (lg["sport"], lg["player"], lg["market"])
         score = (1 if lg["dec"] else 0, lg["rate"], min(lg["dec"] or 0, 11))
         cur = best.get(key)
         if cur is None or score > cur[0]:
@@ -193,7 +201,7 @@ def _legs_mlb(r):
             log_label="Recent games \u2014 runs")
         out.append(_mk_leg("MLB", p.get("name"), p.get("team"), p.get("opp"), "Runs", ln, p.get("pick"), od, 0, why))
     _prop_lbl = {"pitcher_hits_allowed": "Hits Allowed", "pitcher_outs": "Outs",
-                 "pitcher_earned_runs": "Earned Runs"}
+                 "pitcher_earned_runs": "Earned Runs", "pitcher_walks": "Walks Allowed"}
     for mkt, bucket in (r.get("pitcher_props") or {}).items():
         for p in ((bucket or {}).get("picks") or []):
             od = p.get("over_odds") if p.get("pick") == "OVER" else p.get("under_odds")
@@ -218,34 +226,46 @@ def _legs_nhl(r):
     for p in plays:
         if not p or not p.get("name"):
             continue
-        # Respect the NHL app's lean: a FADE-tagged pick means the model expects the
-        # UNDER (avg is clearly below the book line + weak recent rate), so add it as
-        # an UNDER leg priced on the under odds instead of forcing an OVER bet on a
-        # player the app is telling you to fade. Everything else stays an OVER leg.
-        if p.get("tag") == "FADE":
-            side, odds = "UNDER", p.get("realUnderOdds")
-        else:
-            side, odds = "OVER", p.get("realOdds")
-        if not _floor_ok(odds):
-            continue
+        name = p.get("name"); team = p.get("team"); opp = p.get("opponent")
+        mkt = p.get("mkt") or "Shots on Goal"
+        glog = _mklog(p.get("glog"), "v")
         line = p.get("realLine")
         if line is None:
             line = p.get("dispLine")
         if line is None:
             line = 1.5
-        rate = p.get("vsLineRate") or p.get("rateB") or p.get("rateA") or 0
-        why = _why(
-            head=p.get("head"),
-            stats=[["Avg", p.get("avg")],
-                   ["Career vs opp", _frac(p.get("hitsA"), p.get("totA"), p.get("rateA"))],
-                   ["L10 home/road", _frac(p.get("hitsB"), p.get("totB"), p.get("rateB"))],
-                   ["Cleared line", _frac(p.get("vsLineHits"), p.get("vsLineTotal"), p.get("vsLineRate"))],
-                   ["Projected", p.get("proj")], ["Line", line]],
-            log=_mklog(p.get("glog"), "v"),
-            log_label="Recent games")
-        out.append(_mk_leg("NHL", p.get("name"), p.get("team"), p.get("opponent"),
-                           p.get("mkt") or "Shots on Goal", line, side, odds, rate, why))
-    return _dedup_best(out, "player")
+        # OVER leg — the app's headline lean. Skip when the model tags the pick FADE
+        # (it is telling you to bet the under, not force an over on that player).
+        if p.get("tag") != "FADE" and _floor_ok(p.get("realOdds")):
+            o_rate = p.get("vsLineRate") or p.get("rateB") or p.get("rateA") or 0
+            why_o = _why(
+                head=p.get("head"),
+                stats=[["Avg", p.get("avg")],
+                       ["Career vs opp", _frac(p.get("hitsA"), p.get("totA"), p.get("rateA"))],
+                       ["L10 home/road", _frac(p.get("hitsB"), p.get("totB"), p.get("rateB"))],
+                       ["Cleared line", _frac(p.get("vsLineHits"), p.get("vsLineTotal"), p.get("vsLineRate"))],
+                       ["Projected", p.get("proj")], ["Line", line]],
+                log=glog, log_label="Recent games")
+            out.append(_mk_leg("NHL", name, team, opp, mkt, line, "OVER",
+                               p.get("realOdds"), o_rate, why_o))
+        # UNDER leg — every pick with a posted, priced under side. Mirrors the NHL
+        # app's full UNDER tracks (shots/points/assists/saves) so all of them are
+        # draftable in the hub, not just FADE-tagged players.
+        if _floor_ok(p.get("realUnderOdds")):
+            uline = p.get("underLine")
+            if uline is None:
+                uline = line
+            u_rate = p.get("underRate") or 0
+            why_u = _why(
+                head=("Stays under %s in %s%% of recent games" % (uline, u_rate)) if u_rate else p.get("head"),
+                stats=[["Avg", p.get("avg")],
+                       ["Under line L10", _frac(p.get("underHits"), p.get("underTotal"), p.get("underRate"))],
+                       ["Cleared line", _frac(p.get("vsLineHits"), p.get("vsLineTotal"), p.get("vsLineRate"))],
+                       ["Projected", p.get("proj")], ["Line", uline]],
+                log=glog, log_label="Recent games")
+            out.append(_mk_leg("NHL", name, team, opp, mkt, uline, "UNDER",
+                               p.get("realUnderOdds"), u_rate, why_u))
+    return _dedup_best(out, "player_market_side")
 
 def _legs_nfl(r):
     out = []
@@ -963,7 +983,10 @@ function plRender(){
   document.getElementById("plList").innerHTML=h;
   plTicket();
 }
-function plAddIdx(i){var l=PL_ALL[i];if(!l)return;for(var j=0;j<PL_TICKET.length;j++){if(PL_TICKET[j]._i===i)return;}PL_TICKET.push(l);plRender();plMath();}
+function plPMKey(l){return l.sport+"|"+(l.player||"")+"|"+(l.market||"");}
+function plAddIdx(i){var l=PL_ALL[i];if(!l)return;for(var j=0;j<PL_TICKET.length;j++){if(PL_TICKET[j]._i===i)return;}
+  var k=plPMKey(l);PL_TICKET=PL_TICKET.filter(function(t){return plPMKey(t)!==k;});
+  PL_TICKET.push(l);plRender();plMath();}
 function plRemoveIdx(i){PL_TICKET=PL_TICKET.filter(function(l){return l._i!==i;});plRender();plMath();}
 function plClear(){PL_TICKET=[];plRender();plMath();}
 function plWhy(i){
@@ -1049,8 +1072,8 @@ function plBuild(rand){
   var buckets={}; PL_SPORTS.forEach(function(s){buckets[s]=[];});
   pool.forEach(function(l){if(buckets[l.sport])buckets[l.sport].push(l);});
   if(rand)PL_SPORTS.forEach(function(s){plShuffle(buckets[s]);});
-  PL_TICKET=[]; var seen={};
-  function take(s,cnt){var b=buckets[s]||[],got=0;for(var k=0;k<b.length&&got<cnt;k++){var u=b[k]._i;if(seen[u])continue;seen[u]=1;PL_TICKET.push(b[k]);got++;}return got;}
+  PL_TICKET=[]; var seen={}, seenPM={};
+  function take(s,cnt){var b=buckets[s]||[],got=0;for(var k=0;k<b.length&&got<cnt;k++){var lg=b[k],u=lg._i;if(seen[u])continue;var pk=plPMKey(lg);if(seenPM[pk])continue;seen[u]=1;seenPM[pk]=1;PL_TICKET.push(lg);got++;}return got;}
   if(document.getElementById("plMix").value==="custom"){
     PL_SPORTS.forEach(function(s){take(s,parseInt(document.getElementById("plMix"+s).value,10)||0);});
   }else{
