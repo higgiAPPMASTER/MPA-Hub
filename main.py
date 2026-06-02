@@ -776,6 +776,8 @@ PARLAY_HTML = BASE_STYLE + """
   .pl-over{color:#4ade80;font-weight:800}.pl-under{color:#fb7185;font-weight:800}
   .pl-add{background:#14532d;color:#86efac;border:1px solid #166534;border-radius:7px;padding:4px 10px;font-size:12px;cursor:pointer;font-weight:800}
   .pl-rm{background:#7f1d1d;color:#fca5a5;border:1px solid #991b1b;border-radius:7px;padding:3px 9px;font-size:12px;cursor:pointer;font-weight:800}
+  .pl-swap{background:#1e3a8a;color:#bfdbfe;border:1px solid #1d4ed8;border-radius:7px;padding:3px 8px;font-size:13px;cursor:pointer;font-weight:800;line-height:1}
+  .pl-swap.none{background:#374151;color:#9ca3af;border-color:#4b5563}
   .pl-fbtn{background:#1f2937;color:#9ca3af;border:1px solid #334155;border-radius:999px;padding:5px 12px;font-size:12px;cursor:pointer;font-weight:700}
   .pl-fbtn.on{background:#f59e0b;color:#111;border-color:#f59e0b}
   .pl-st{font-size:11px;font-weight:700;padding:3px 9px;border-radius:6px;margin-right:6px;display:inline-block;margin-top:6px}
@@ -988,6 +990,25 @@ function plAddIdx(i){var l=PL_ALL[i];if(!l)return;for(var j=0;j<PL_TICKET.length
   var k=plPMKey(l);PL_TICKET=PL_TICKET.filter(function(t){return plPMKey(t)!==k;});
   PL_TICKET.push(l);plRender();plMath();}
 function plRemoveIdx(i){PL_TICKET=PL_TICKET.filter(function(l){return l._i!==i;});plRender();plMath();}
+function plReplaceIdx(i){
+  var pos=-1; for(var j=0;j<PL_TICKET.length;j++){if(PL_TICKET[j]._i===i){pos=j;break;}}
+  if(pos<0)return;
+  var cur=PL_TICKET[pos];
+  var inT={}, pmT={};
+  PL_TICKET.forEach(function(t){if(t._i!==i){inT[t._i]=1;pmT[plPMKey(t)]=1;}});
+  var cands=plFiltered().filter(function(l){
+    return l.sport===cur.sport && l._i!==cur._i && !inT[l._i] && !pmT[plPMKey(l)];
+  });
+  if(!cands.length){plFlashNoSwap(i);return;}
+  var pick=cands[Math.floor(Math.random()*cands.length)];
+  PL_TICKET[pos]=pick;
+  plRender();plMath();
+}
+function plFlashNoSwap(i){
+  var b=document.getElementById("plrep"+i);if(!b)return;
+  var orig=b.innerHTML;b.classList.add("none");b.innerHTML="none";
+  setTimeout(function(){b.classList.remove("none");b.innerHTML=orig;},1000);
+}
 function plClear(){PL_TICKET=[];plRender();plMath();}
 function plWhy(i){
   var l=PL_ALL[i]; if(!l)return;
@@ -1032,6 +1053,7 @@ function plTicket(){
       +'<div style="flex:1;min-width:0"><div onclick="plWhy('+l._i+')" title="Why this pick?" style="font-weight:700;font-size:12px;cursor:pointer;border-bottom:1px dotted #6b7280;display:inline-block">'+_esc(l.player)+'</div>'
       +'<div style="font-size:10px;color:#9ca3af">'+_esc(l.market)+' <span class="'+sc+'">'+l.side+" "+(l.line==null?"":l.line)+"</span></div></div>"
       +'<span style="font-weight:800;font-size:12px;color:#f59e0b">'+plAmFmt(l.odds)+"</span>"
+      +'<button class="pl-swap" id="plrep'+l._i+'" onclick="plReplaceIdx('+l._i+')" title="Swap this leg for another '+_esc(l.sport)+' pick">&#8635;</button>'
       +'<button class="pl-rm" onclick="plRemoveIdx('+l._i+')">&minus;</button></div>';
   }).join("");
 }
