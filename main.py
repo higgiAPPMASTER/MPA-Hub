@@ -24,7 +24,7 @@ def make_app_token(email):
     from jose import jwt as _jwt
     from datetime import datetime, timedelta
     key = JWT_SECRET or SECRET_KEY
-    return _jwt.encode({"sub": email, "exp": datetime.utcnow() + timedelta(hours=24)}, key, algorithm="HS256")
+    return _jwt.encode({"sub": email, "exp": datetime.utcnow() + timedelta(days=30)}, key, algorithm="HS256")
 
 # ── Cross-sport parlay (admin only) ──────────────────────────────────────────
 # Each sport app exposes a read-only cached-picks JSON endpoint that accepts the
