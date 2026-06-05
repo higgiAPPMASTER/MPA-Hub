@@ -382,6 +382,11 @@ async def _fetch_sport_bets(token):
         try:
             resp = await client.get(url, params={"token": token, "settle": "true"}, headers=headers)
             if resp.status_code != 200:
+                # Settlement runs ESPN calls per game date and can transiently rate-limit
+                # (HTTP 429). Fall back to a read-only fetch so a settle hiccup never blanks
+                # a sport on the combined My Record card; each app settles itself elsewhere.
+                resp = await client.get(url, params={"token": token, "settle": "false"}, headers=headers)
+            if resp.status_code != 200:
                 return sport, {"ok": False, "error": "HTTP " + str(resp.status_code), "summary": None}
             return sport, {"ok": True, "error": "", "summary": (resp.json() or {}).get("summary")}
         except Exception as e:
