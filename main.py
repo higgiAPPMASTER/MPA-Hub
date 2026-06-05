@@ -1557,15 +1557,19 @@ async def admin_cancel(request: Request, email: str = Form(...)):
         return RedirectResponse(url="/login")
     if email == ADMIN_EMAIL:  # Never cancel the master account
         return RedirectResponse(url="/admin", status_code=302)
-    db.table("subscribers").update({
-        "is_active": False,
-        "notes": (db.table("subscribers").select("notes").eq("email",email).execute().data or [{}])[0].get("notes","") + " | CANCELLED BY ADMIN"
-    }).eq("email", email).execute()
-    # Cancel Stripe subscription if exists
     try:
-        sub = db.table("subscribers").select("stripe_subscription_id").eq("email",email).execute().data
-        if sub and sub[0].get("stripe_subscription_id"):
-            stripe.subscription.cancel(sub[0]["stripe_subscription_id"])
+        existing = db.table("subscribers").select("notes,stripe_subscription_id").eq("email", email).execute().data or [{}]
+        old_notes = existing[0].get("notes", "") or ""
+        db.table("subscribers").update({
+            "is_active": False,
+            "notes": old_notes + " | CANCELLED BY ADMIN"
+        }).eq("email", email).execute()
+        sid = existing[0].get("stripe_subscription_id")
+        if sid:
+            try:
+                stripe.Subscription.cancel(sid)
+            except Exception:
+                pass
     except Exception:
         pass
     return RedirectResponse(url="/admin", status_code=302)
@@ -1575,7 +1579,10 @@ async def admin_cancel(request: Request, email: str = Form(...)):
 async def admin_reinstate(request: Request, email: str = Form(...)):
     if not is_admin(request):
         return RedirectResponse(url="/login")
-    db.table("subscribers").update({"is_active": True}).eq("email", email).execute()
+    try:
+        db.table("subscribers").update({"is_active": True}).eq("email", email).execute()
+    except Exception:
+        pass
     return RedirectResponse(url="/admin", status_code=302)
 
 
