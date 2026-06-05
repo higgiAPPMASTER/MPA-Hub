@@ -369,6 +369,28 @@ async def _fetch_sport_legs(token, dates):
         pairs = await asyncio.gather(*[one(client, s) for s in endpoints])
     return {sport: info for sport, info in pairs}
 
+
+async def _fetch_sport_bets(token):
+    """Fan out to every sport app's GET /api/bets (admin JWT), pull the {summary}
+    block, so the hub can show one combined My Record across all four apps."""
+    import asyncio
+    import httpx
+    headers = {"Authorization": "Bearer " + token}
+
+    async def one(client, sport):
+        url = SPORT_APPS[sport] + "/api/bets"
+        try:
+            resp = await client.get(url, params={"token": token, "settle": "true"}, headers=headers)
+            if resp.status_code != 200:
+                return sport, {"ok": False, "error": "HTTP " + str(resp.status_code), "summary": None}
+            return sport, {"ok": True, "error": "", "summary": (resp.json() or {}).get("summary")}
+        except Exception as e:
+            return sport, {"ok": False, "error": str(e)[:160], "summary": None}
+
+    async with httpx.AsyncClient(timeout=20, follow_redirects=True) as client:
+        pairs = await asyncio.gather(*[one(client, s) for s in SPORT_APPS])
+    return {sport: info for sport, info in pairs}
+
 db = create_client(SUPABASE_URL, SUPABASE_KEY) if SUPABASE_URL and SUPABASE_KEY else None
 
 ADMIN_EMAIL    = os.environ.get("ADMIN_EMAIL", "")
@@ -726,6 +748,21 @@ DASHBOARD_HTML = BASE_STYLE + """
     <span style="font-size:20px">🔐</span>
     <span style="color:#6b7280">These picks are exclusively for <strong style="color:#f59e0b">{email}</strong> — sharing your account or picks violates our terms and will result in immediate cancellation.</span>
   </div>
+  <style>
+  .hub-rec-tbl{width:100%;border-collapse:collapse;font-size:13px}
+  .hub-rec-tbl th{padding:7px 10px;text-align:left;font-size:11px;color:#6b7280;font-weight:700;text-transform:uppercase;letter-spacing:.07em;border-bottom:1px solid #1f2937;white-space:nowrap}
+  .hub-rec-tbl td{padding:8px 10px;border-bottom:1px solid #111827;color:#e5e7eb}
+  .hub-rec-tbl tr:last-child td{border-bottom:none}
+  </style>
+  <div id="hub-record-card" style="display:none;margin-bottom:32px">
+    <div class="card" style="padding:22px 24px">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:14px">
+        <h2 class="font-display" style="font-size:22px;margin:0">📊 My Record <span style="font-size:12px;color:#6b7280;font-weight:400">· all sports combined</span></h2>
+        <button onclick="loadHubRecord()" style="background:#1f2937;color:#9ca3af;border:none;border-radius:8px;padding:7px 13px;font-size:12px;font-weight:700;cursor:pointer">&#8635; Refresh</button>
+      </div>
+      <div id="hub-record-body"><p style="color:#6b7280;font-size:13px">Loading&#8230;</p></div>
+    </div>
+  </div>
   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:20px">
     <div class="card" style="text-align:center;display:flex;flex-direction:column;gap:14px;align-items:center">
       <div style="font-size:52px">⚾</div>
@@ -756,6 +793,46 @@ DASHBOARD_HTML = BASE_STYLE + """
 <script>
 var _hubTok='__HUB_TOKEN__';
 function openApp(url){window.open(url+'?token='+encodeURIComponent(_hubTok),'_blank');}
+var _hubIsAdmin=__IS_ADMIN__;
+function _hrMoney(v){var n=Number(v)||0;return(n>=0?'$':'\u2212$')+Math.abs(n).toFixed(2);}
+function _hrStat(lbl,val,clr){return '<div style="background:#0e0e0e;border-radius:10px;padding:12px 16px;min-width:104px"><div style="font-size:11px;color:#6b7280;text-transform:uppercase;letter-spacing:.08em">'+lbl+'</div><div style="font-size:1.3rem;font-weight:800;color:'+(clr||'#e5e7eb')+'">'+val+'</div></div>';}
+function renderHubRecord(d){
+  var c=d.combined||{};
+  var roiTxt=c.roi!=null?((c.roi>0?'+':'')+c.roi+'%'):'\u2014';
+  var roiClr=c.roi==null?'#9ca3af':(c.roi>0?'#4ade80':(c.roi<0?'#f87171':'#facc15'));
+  var netClr=(c.profit||0)>0?'#4ade80':((c.profit||0)<0?'#f87171':'#cbd5e1');
+  var rec=(c.wins||0)+'-'+(c.losses||0)+(c.push?('-'+c.push+'P'):'');
+  var wp=c.win_pct!=null?c.win_pct+'%':'\u2014';
+  var head='<div style="display:flex;flex-wrap:wrap;gap:12px;margin-bottom:16px">'
+    +_hrStat('Record',rec,'#e5e7eb')+_hrStat('Win %',wp,'#e5e7eb')+_hrStat('Pending',(c.pending||0),'#9ca3af')
+    +_hrStat('Staked',_hrMoney(c.staked||0),'#cbd5e1')+_hrStat('Net',_hrMoney(c.profit||0),netClr)+_hrStat('ROI',roiTxt,roiClr)+'</div>';
+  var EMO={MLB:'⚾',NHL:'🏒',NBA:'🏀',NFL:'🏈'};
+  var rows=(d.by_sport||[]).map(function(s){
+    var nm=(EMO[s.sport]||'')+' '+s.sport;
+    if(!s.ok) return '<tr><td style="font-weight:700">'+nm+'</td><td colspan="5" style="color:#6b7280;font-size:12px">'+(s.error||'unavailable')+'</td></tr>';
+    var sroi=s.roi!=null?((s.roi>0?'+':'')+s.roi+'%'):'\u2014';
+    var sclr=s.roi==null?'#9ca3af':(s.roi>0?'#4ade80':(s.roi<0?'#f87171':'#facc15'));
+    return '<tr><td style="font-weight:700">'+nm+'</td>'
+      +'<td style="font-family:monospace">'+(s.wins||0)+'-'+(s.losses||0)+(s.push?('-'+s.push+'P'):'')+'</td>'
+      +'<td style="font-family:monospace;color:#9ca3af">'+(s.pending||0)+'</td>'
+      +'<td style="font-family:monospace">'+_hrMoney(s.staked||0)+'</td>'
+      +'<td style="font-family:monospace;color:'+((s.profit||0)>=0?'#4ade80':'#f87171')+'">'+_hrMoney(s.profit||0)+'</td>'
+      +'<td style="font-family:monospace;font-weight:700;color:'+sclr+'">'+sroi+'</td></tr>';
+  }).join('');
+  var tbl='<div style="overflow-x:auto"><table class="hub-rec-tbl"><thead><tr><th>Sport</th><th>W-L</th><th>Pend</th><th>Staked</th><th>Net</th><th>ROI</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
+  document.getElementById('hub-record-body').innerHTML=head+tbl;
+}
+function loadHubRecord(){
+  if(!_hubIsAdmin) return;
+  var card=document.getElementById('hub-record-card');if(!card) return;
+  card.style.display='block';
+  document.getElementById('hub-record-body').innerHTML='<p style="color:#6b7280;font-size:13px">Loading\u2026</p>';
+  fetch('/api/my-record').then(function(r){return r.json();}).then(function(d){
+    if(d.error){document.getElementById('hub-record-body').innerHTML='<p style="color:#f87171">'+d.error+'</p>';return;}
+    renderHubRecord(d);
+  }).catch(function(){document.getElementById('hub-record-body').innerHTML='<p style="color:#f87171">Error loading record</p>';});
+}
+if(_hubIsAdmin){if(document.readyState==='loading'){document.addEventListener('DOMContentLoaded',loadHubRecord);}else{loadHubRecord();}}
 </script>
 """
 
@@ -1380,6 +1457,7 @@ async def dashboard(request: Request):
     return (DASHBOARD_HTML
             .replace("{admin_link}", admin_link)
             .replace("{email}", user)
+            .replace("__IS_ADMIN__", "true" if is_admin(request) else "false")
             .replace("__HUB_TOKEN__", make_app_token(user)))
 
 # ── Logout ─────────────────────────────────────────────────────────────────────
@@ -1549,6 +1627,44 @@ async def admin_parlay_data(request: Request):
     summary = {s: {"ok": i["ok"], "error": i["error"], "count": len(i["legs"]), "date": dates[s]}
                for s, i in sports.items()}
     return JSONResponse({"date": default, "dates": dates, "summary": summary, "legs": legs})
+
+
+@app.get("/api/my-record")
+async def my_record(request: Request):
+    """Combined cross-sport bet record (admin only). Fans out to all four apps'
+    /api/bets, aggregates Record / Win% / ROI, and returns a per-sport breakdown."""
+    if not is_admin(request):
+        return JSONResponse({"error": "admin only"}, status_code=403)
+    email = get_user(request) or ADMIN_EMAIL
+    token = make_app_token(email)
+    sports = await _fetch_sport_bets(token)
+    agg = {"wins": 0, "losses": 0, "push": 0, "pending": 0, "staked": 0.0, "profit": 0.0}
+    by_sport = []
+    for s in ("MLB", "NHL", "NBA", "NFL"):
+        info = sports.get(s, {})
+        summ = info.get("summary")
+        row = {"sport": s, "ok": bool(info.get("ok")), "error": info.get("error", "")}
+        if summ:
+            agg["wins"] += summ.get("wins", 0) or 0
+            agg["losses"] += summ.get("losses", 0) or 0
+            agg["push"] += summ.get("push", 0) or 0
+            agg["pending"] += summ.get("pending", 0) or 0
+            agg["staked"] += summ.get("staked", 0) or 0
+            agg["profit"] += summ.get("profit", 0) or 0
+            for k in ("wins", "losses", "push", "pending", "staked", "profit", "returned", "roi"):
+                row[k] = summ.get(k)
+        by_sport.append(row)
+    staked = agg["staked"]
+    profit = agg["profit"]
+    decided = agg["wins"] + agg["losses"]
+    combined = {
+        "wins": agg["wins"], "losses": agg["losses"], "push": agg["push"],
+        "pending": agg["pending"], "staked": round(staked, 2), "profit": round(profit, 2),
+        "returned": round(staked + profit, 2),
+        "roi": round(profit / staked * 100, 1) if staked > 0 else None,
+        "win_pct": round(agg["wins"] / decided * 100, 1) if decided > 0 else None,
+    }
+    return JSONResponse({"combined": combined, "by_sport": by_sport})
 
 
 @app.post("/admin/cancel")
