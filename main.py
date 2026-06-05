@@ -759,15 +759,6 @@ DASHBOARD_HTML = BASE_STYLE + """
   .hub-rec-tbl td{padding:8px 10px;border-bottom:1px solid #111827;color:#e5e7eb}
   .hub-rec-tbl tr:last-child td{border-bottom:none}
   </style>
-  <div id="hub-record-card" style="display:none;margin-bottom:32px">
-    <div class="card" style="padding:22px 24px">
-      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:14px">
-        <h2 class="font-display" style="font-size:22px;margin:0">📊 My Record <span style="font-size:12px;color:#6b7280;font-weight:400">· all sports combined</span></h2>
-        <button onclick="loadHubRecord()" style="background:#1f2937;color:#9ca3af;border:none;border-radius:8px;padding:7px 13px;font-size:12px;font-weight:700;cursor:pointer">&#8635; Refresh</button>
-      </div>
-      <div id="hub-record-body"><p style="color:#6b7280;font-size:13px">Loading&#8230;</p></div>
-    </div>
-  </div>
   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:20px">
     <div class="card" style="text-align:center;display:flex;flex-direction:column;gap:14px;align-items:center">
       <div style="font-size:52px">⚾</div>
@@ -792,6 +783,15 @@ DASHBOARD_HTML = BASE_STYLE + """
       <span style="font-size:10px;font-weight:700;letter-spacing:.1em;background:#b45309;color:#fff;padding:3px 10px;border-radius:4px">FOOTBALL</span>
       <h3 class="font-display" style="font-size:20px">NFL Money Bombs</h3>
       <a href="#" onclick="openApp('https://nfl-money-bombs.onrender.com');return false;" class="btn" style="width:100%;text-align:center;margin-top:auto">🎯 OPEN PICKS</a>
+    </div>
+  </div>
+  <div id="hub-record-card" style="display:none;margin-top:32px">
+    <div class="card" style="padding:22px 24px">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:14px">
+        <h2 class="font-display" style="font-size:22px;margin:0">📊 My Record <span style="font-size:12px;color:#6b7280;font-weight:400">· all sports combined</span></h2>
+        <button onclick="loadHubRecord()" style="background:#1f2937;color:#9ca3af;border:none;border-radius:8px;padding:7px 13px;font-size:12px;font-weight:700;cursor:pointer">&#8635; Refresh</button>
+      </div>
+      <div id="hub-record-body"><p style="color:#6b7280;font-size:13px">Loading&#8230;</p></div>
     </div>
   </div>
 </div>
