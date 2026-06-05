@@ -735,10 +735,13 @@ SETUP_HTML = BASE_STYLE + """
 
 DASHBOARD_HTML = BASE_STYLE + """
 <nav>
-  <a href="/dashboard" class="brand">
-    <img src="https://moneypicksarena.com/logo.png" alt="Money Picks Arena"/>
-    <span class="brand-text"><span class="m">Money </span><span class="p">Picks </span><span class="a">Arena</span></span>
-  </a>
+  <div style="display:flex;align-items:center;gap:16px;min-width:0;flex:1">
+    <a href="/dashboard" class="brand">
+      <img src="https://moneypicksarena.com/logo.png" alt="Money Picks Arena"/>
+      <span class="brand-text"><span class="m">Money </span><span class="p">Picks </span><span class="a">Arena</span></span>
+    </a>
+    <div id="hub-rec-chip" onclick="hubRecChipClick()" style="display:none;cursor:pointer;background:#0f172a;border:1px solid #1f2937;border-radius:10px;padding:7px 14px;font-size:12px;font-weight:700;color:#9ca3af;white-space:nowrap">📊 <span id="hub-rec-chip-txt">My Record</span></div>
+  </div>
   <div class="nav-links">
     <span style="color:#4b5563;font-size:12px" class="hide-sm">{email}</span>
     <span style="background:rgba(74,222,128,.08);border:1px solid rgba(74,222,128,.2);color:#4ade80;font-size:11px;font-weight:700;padding:4px 12px;border-radius:999px;white-space:nowrap">✓ ACTIVE</span>
@@ -811,6 +814,9 @@ function renderHubRecord(d){
   var head='<div style="display:flex;flex-wrap:wrap;gap:12px;margin-bottom:16px">'
     +_hrStat('Record',rec,'#e5e7eb')+_hrStat('Win %',wp,'#e5e7eb')+_hrStat('Pending',(c.pending||0),'#9ca3af')
     +_hrStat('Staked',_hrMoney(c.staked||0),'#cbd5e1')+_hrStat('Net',_hrMoney(c.profit||0),netClr)+_hrStat('ROI',roiTxt,roiClr)+'</div>';
+  var _chip=document.getElementById('hub-rec-chip');var _chipTxt=document.getElementById('hub-rec-chip-txt');
+  if(_chip)_chip.style.display='block';
+  if(_chipTxt)_chipTxt.textContent='My Record \xb7 '+rec+(c.win_pct!=null?' \xb7 '+c.win_pct+'%':'');
   var EMO={MLB:'⚾',NHL:'🏒',NBA:'🏀',NFL:'🏈'};
   var rows=(d.by_sport||[]).map(function(s){
     var nm=(EMO[s.sport]||'')+' '+s.sport;
@@ -826,6 +832,12 @@ function renderHubRecord(d){
   }).join('');
   var tbl='<div style="overflow-x:auto"><table class="hub-rec-tbl"><thead><tr><th>Sport</th><th>W-L</th><th>Pend</th><th>Staked</th><th>Net</th><th>ROI</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
   document.getElementById('hub-record-body').innerHTML=head+tbl;
+}
+function hubRecChipClick(){
+  var card=document.getElementById('hub-record-card');
+  if(!card) return;
+  card.style.display='block';
+  setTimeout(function(){card.scrollIntoView({behavior:'smooth',block:'start'});},50);
 }
 function loadHubRecord(){
   if(!_hubIsAdmin) return;
