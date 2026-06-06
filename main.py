@@ -802,6 +802,7 @@ DASHBOARD_HTML = BASE_STYLE + """
 var _hubTok='__HUB_TOKEN__';
 function openApp(url){window.open(url+'?token='+encodeURIComponent(_hubTok),'_blank');}
 var _hubIsAdmin=__IS_ADMIN__;
+var _hubAdminTok='__ADMIN_TOKEN__';
 function _hrMoney(v){var n=Number(v)||0;return(n>=0?'$':'\u2212$')+Math.abs(n).toFixed(2);}
 function _hrStat(lbl,val,clr){return '<div style="background:#0e0e0e;border-radius:10px;padding:12px 16px;min-width:104px"><div style="font-size:11px;color:#6b7280;text-transform:uppercase;letter-spacing:.08em">'+lbl+'</div><div style="font-size:1.3rem;font-weight:800;color:'+(clr||'#e5e7eb')+'">'+val+'</div></div>';}
 function renderHubRecord(d){
@@ -844,7 +845,8 @@ function loadHubRecord(){
   var card=document.getElementById('hub-record-card');if(!card) return;
   card.style.display='block';
   document.getElementById('hub-record-body').innerHTML='<p style="color:#6b7280;font-size:13px">Loading\u2026</p>';
-  fetch('/api/my-record',{credentials:'same-origin'}).then(function(r){return r.json();}).then(function(d){
+  var _recUrl='/api/my-record'+(_hubAdminTok?'?admin='+encodeURIComponent(_hubAdminTok):'');
+  fetch(_recUrl,{credentials:'same-origin'}).then(function(r){return r.json();}).then(function(d){
     if(d.error){document.getElementById('hub-record-body').innerHTML='<p style="color:#f87171">'+d.error+'</p>';return;}
     renderHubRecord(d);
   }).catch(function(){document.getElementById('hub-record-body').innerHTML='<p style="color:#f87171">Error loading record</p>';});
@@ -1475,6 +1477,7 @@ async def dashboard(request: Request):
             .replace("{admin_link}", admin_link)
             .replace("{email}", user)
             .replace("__IS_ADMIN__", "true" if is_admin(request) else "false")
+            .replace("__ADMIN_TOKEN__", os.environ.get("INTERNAL_API_TOKEN", "") if is_admin(request) else "")
             .replace("__HUB_TOKEN__", make_app_token(user)))
 
 # ── Logout ─────────────────────────────────────────────────────────────────────
@@ -1649,8 +1652,12 @@ async def admin_parlay_data(request: Request):
 @app.get("/api/my-record")
 async def my_record(request: Request):
     """Combined cross-sport bet record (admin only). Fans out to all four apps'
-    /api/bets, aggregates Record / Win% / ROI, and returns a per-sport breakdown."""
-    if not is_admin(request):
+    /api/bets, aggregates Record / Win% / ROI, and returns a per-sport breakdown.
+    Accepts ?admin=INTERNAL_API_TOKEN so the fetch works even after a Render restart
+    clears the in-memory SESSIONS dict."""
+    _tok = request.query_params.get("admin", "")
+    _int = os.environ.get("INTERNAL_API_TOKEN", "__none__")
+    if not is_admin(request) and not (_tok and _tok == _int):
         return JSONResponse({"error": "admin only"}, status_code=403)
     email = get_user(request) or ADMIN_EMAIL
     token = make_app_token(email)
