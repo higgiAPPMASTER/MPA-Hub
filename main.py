@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Request, Form
+ from fastapi import FastAPI, Request, Form
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 import uvicorn, os, secrets, hashlib
 import stripe
@@ -1010,7 +1010,7 @@ function plBuildFilters(){
   var sf=document.getElementById("plSportFilters");
   var order=["ALL","MLB","NHL","NBA","NFL"].filter(function(s){return s==="ALL"||sports[s];});
   sf.innerHTML=order.map(function(s){
-    return '<button class="pl-fbtn'+(s===PL_SPORT?" on":"")+'" onclick="plSetSport(\\''+s+'\\')">'+s+"</button>";
+    return '<button class="pl-fbtn'+(s===PL_SPORT?" on":"")+'" onclick="plSetSport(&#39;'+s+'&#39;)">'+s+"</button>";
   }).join("");
   var rowS='display:flex;align-items:center;gap:6px;font-size:12px;color:#cbd5e1;padding:3px 2px;cursor:pointer;white-space:nowrap';
   Object.keys(cats).forEach(function(c){if(PL_CATS[c]===undefined)PL_CATS[c]=true;});
