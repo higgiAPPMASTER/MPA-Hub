@@ -844,7 +844,7 @@ function loadHubRecord(){
   var card=document.getElementById('hub-record-card');if(!card) return;
   card.style.display='block';
   document.getElementById('hub-record-body').innerHTML='<p style="color:#6b7280;font-size:13px">Loading\u2026</p>';
-  fetch('/api/my-record').then(function(r){return r.json();}).then(function(d){
+  fetch('/api/my-record',{credentials:'same-origin'}).then(function(r){return r.json();}).then(function(d){
     if(d.error){document.getElementById('hub-record-body').innerHTML='<p style="color:#f87171">'+d.error+'</p>';return;}
     renderHubRecord(d);
   }).catch(function(){document.getElementById('hub-record-body').innerHTML='<p style="color:#f87171">Error loading record</p>';});
