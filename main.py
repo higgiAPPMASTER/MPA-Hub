@@ -1,4 +1,4 @@
- from fastapi import FastAPI, Request, Form
+from fastapi import FastAPI, Request, Form
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 import uvicorn, os, secrets, hashlib
 import stripe
