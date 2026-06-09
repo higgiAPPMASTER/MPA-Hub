@@ -841,7 +841,6 @@ function hubRecChipClick(){
   setTimeout(function(){card.scrollIntoView({behavior:'smooth',block:'start'});},50);
 }
 function loadHubRecord(){
-  if(!_hubIsAdmin) return;
   var card=document.getElementById('hub-record-card');if(!card) return;
   card.style.display='block';
   document.getElementById('hub-record-body').innerHTML='<p style="color:#6b7280;font-size:13px">Loading\u2026</p>';
@@ -851,7 +850,7 @@ function loadHubRecord(){
     renderHubRecord(d);
   }).catch(function(){document.getElementById('hub-record-body').innerHTML='<p style="color:#f87171">Error loading record</p>';});
 }
-if(_hubIsAdmin){if(document.readyState==='loading'){document.addEventListener('DOMContentLoaded',loadHubRecord);}else{loadHubRecord();}}
+if(document.readyState==='loading'){document.addEventListener('DOMContentLoaded',loadHubRecord);}else{loadHubRecord();}
 </script>
 """
 
@@ -1651,15 +1650,20 @@ async def admin_parlay_data(request: Request):
 
 @app.get("/api/my-record")
 async def my_record(request: Request):
-    """Combined cross-sport bet record (admin only). Fans out to all four apps'
-    /api/bets, aggregates Record / Win% / ROI, and returns a per-sport breakdown.
-    Accepts ?admin=INTERNAL_API_TOKEN so the fetch works even after a Render restart
-    clears the in-memory SESSIONS dict."""
+    """Combined cross-sport bet record for the LOGGED-IN user (scoped to their own
+    email). Fans out to all four apps' /api/bets, aggregates Record / Win% / ROI,
+    and returns a per-sport breakdown. Accepts ?admin=INTERNAL_API_TOKEN so the
+    admin fetch still works even after a Render restart clears the SESSIONS dict."""
     _tok = request.query_params.get("admin", "")
     _int = os.environ.get("INTERNAL_API_TOKEN", "__none__")
-    if not is_admin(request) and not (_tok and _tok == _int):
-        return JSONResponse({"error": "admin only"}, status_code=403)
-    email = get_user(request) or ADMIN_EMAIL
+    # Any authenticated subscriber sees THEIR OWN record (scoped via the token
+    # minted below); the internal-token path resolves to the admin even when the
+    # in-memory session cache was cleared by a restart.
+    email = get_user(request)
+    if not email and _tok and _tok == _int:
+        email = ADMIN_EMAIL
+    if not email:
+        return JSONResponse({"error": "not logged in"}, status_code=403)
     token = make_app_token(email)
     sports = await _fetch_sport_bets(token)
     agg = {"wins": 0, "losses": 0, "push": 0, "pending": 0, "staked": 0.0, "profit": 0.0}
